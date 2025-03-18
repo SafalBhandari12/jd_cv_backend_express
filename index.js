@@ -223,6 +223,10 @@ userRouter.post("/register_candidate", async (req, res) => {
 // Mount the userRouter under the '/user' path
 app.use("/user", userRouter);
 
+app.get("/", (res, req) => {
+  res.statusMessage("Hellos");
+});
+
 // ---------------------------------------------
 // Start the Server
 // ---------------------------------------------
