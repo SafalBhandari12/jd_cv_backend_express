@@ -224,7 +224,7 @@ userRouter.post("/register_candidate", async (req, res) => {
 app.use("/user", userRouter);
 
 app.get("/", (res, req) => {
-  res.statusMessage("Hellos");
+  res.statusMessage("Hello");
 });
 
 // ---------------------------------------------
