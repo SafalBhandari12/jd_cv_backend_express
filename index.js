@@ -92,7 +92,7 @@ async function queryCV(question, cvText, attempt = 1) {
 // ---------------------------------------------
 async function getEmbedding(text, attempt = 1) {
   try {
-    const response = await axios.post("http://127.0.0.1:8000/get_embedding", {
+    const response = await axios.post("https:google.com/get_embedding", {
       text: text,
     });
     // Expected response: { "embedding": embedding_list }
