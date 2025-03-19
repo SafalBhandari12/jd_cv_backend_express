@@ -13,6 +13,37 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// --------------------------
+// User Registration Helpers
+// --------------------------
+// Registers a new user by storing the credentials in users.json
+function registerUser(username, password) {
+  const usersPath = path.join(__dirname, "users.json");
+  let users = {};
+  if (fs.existsSync(usersPath)) {
+    const content = fs.readFileSync(usersPath, "utf8");
+    users = content ? JSON.parse(content) : {};
+  }
+  if (users[username]) {
+    throw new Error("User already exists");
+  }
+  users[username] = { password };
+  fs.writeFileSync(usersPath, JSON.stringify(users, null, 2), "utf8");
+}
+
+// Verifies the given user credentials from users.json
+function verifyUser(username, password) {
+  const usersPath = path.join(__dirname, "users.json");
+  if (!fs.existsSync(usersPath)) return false;
+  const content = fs.readFileSync(usersPath, "utf8");
+  const users = content ? JSON.parse(content) : {};
+  return users[username] && users[username].password === password;
+}
+
+// --------------------------
+// Other Helpers
+// --------------------------
+
 // Function to calculate the ATS score (based on skills and experience text lengths)
 function calculateAtsScore(candidate) {
   const skillsTextLength =
@@ -153,14 +184,82 @@ async function getEmbedding(text, attempt = 1) {
 }
 
 // ---------------------------------------------
-// User Router: Candidate, Job Description, and University Report Endpoints
+// Helper function to remove embedding arrays from candidate objects for response
+// ---------------------------------------------
+function stripEmbeddings(candidateObj) {
+  return {
+    Name: candidateObj.Name,
+    Password: candidateObj.Password,
+    Salary: candidateObj.Salary,
+    University: candidateObj.University,
+    cv: candidateObj.cv,
+    position: candidateObj.position,
+    skills: candidateObj.skills
+      ? { text: candidateObj.skills.text }
+      : undefined,
+    education: candidateObj.education
+      ? { text: candidateObj.education.text }
+      : undefined,
+    responsibilities: candidateObj.responsibilities
+      ? { text: candidateObj.responsibilities.text }
+      : undefined,
+    experience: candidateObj.experience
+      ? { text: candidateObj.experience.text }
+      : undefined,
+    ats: candidateObj.ats,
+    overall_similarity: candidateObj.overall_similarity,
+    similarityScores: candidateObj.similarityScores,
+  };
+}
+
+// ---------------------------------------------
+// User Router: User Registration, Candidate, Job Description, and University Report Endpoints
 // ---------------------------------------------
 const userRouter = express.Router();
 
-// Endpoint: Register Candidate (uses cvQuestions)
-userRouter.post("/register_candidate", async (req, res) => {
-  const { number, name, university, cv, position, password, salary } = req.body;
+// New Endpoint: User Registration
+userRouter.post("/register_user", async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res
+      .status(400)
+      .json({ error: "Both username and password are required." });
+  }
+  try {
+    registerUser(username, password);
+    res.json({ message: "User registered successfully", username });
+  } catch (error) {
+    console.error("Error registering user:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
+// Endpoint: Register Candidate (uses cvQuestions)
+// Now requires "registeredUsername" and "registeredPassword" to verify the user
+userRouter.post("/register_candidate", async (req, res) => {
+  const {
+    registeredUsername,
+    registeredPassword,
+    number,
+    name,
+    university,
+    cv,
+    position,
+    password,
+    salary,
+  } = req.body;
+
+  if (!registeredUsername || !registeredPassword) {
+    return res
+      .status(400)
+      .json({
+        error:
+          "User credentials (registeredUsername, registeredPassword) are required.",
+      });
+  }
+  if (!verifyUser(registeredUsername, registeredPassword)) {
+    return res.status(401).json({ error: "Invalid user credentials." });
+  }
   if (
     !number ||
     !name ||
@@ -175,7 +274,6 @@ userRouter.post("/register_candidate", async (req, res) => {
         "All fields (number, name, university, cv, position, password, salary) are required.",
     });
   }
-
   if (typeof position !== "string") {
     return res.status(400).json({ error: "Position must be a string." });
   }
@@ -246,7 +344,7 @@ userRouter.post("/register_candidate", async (req, res) => {
 
     res.json({
       message: "Candidate registered successfully",
-      candidate: candidateDetails,
+      candidate: stripEmbeddings(candidateDetails),
     });
   } catch (error) {
     console.error("Error registering candidate:", error);
@@ -257,6 +355,7 @@ userRouter.post("/register_candidate", async (req, res) => {
 });
 
 // Endpoint: Register Job Description (uses jdQuestions)
+// User credentials are provided in "username" and "password", and are verified.
 userRouter.post("/register_jd", async (req, res) => {
   const { username, password, salary, job_description, position } = req.body;
 
@@ -266,7 +365,9 @@ userRouter.post("/register_jd", async (req, res) => {
         "All fields (username, password, salary, job_description, position) are required.",
     });
   }
-
+  if (!verifyUser(username, password)) {
+    return res.status(401).json({ error: "Invalid user credentials." });
+  }
   if (typeof position !== "string") {
     return res.status(400).json({ error: "Position must be a string." });
   }
@@ -352,21 +453,10 @@ userRouter.post("/register_jd", async (req, res) => {
       const overallSim = total / candidate.similarityScores.length;
       candidate.overall_similarity = overallSim;
 
-      // Prepare ranking object for response
+      // Prepare ranking object for response (strip embeddings)
       let candidateRankingObj = {
         candidateId: candId,
-        Name: candidate.Name,
-        Password: candidate.Password,
-        Salary: candidate.Salary,
-        University: candidate.University,
-        cv: candidate.cv,
-        position: candidate.position,
-        skills: candidate.skills.text,
-        education: candidate.education.text,
-        responsibilities: candidate.responsibilities.text,
-        experience: candidate.experience.text,
-        ats: candidate.ats,
-        overall_similarity: overallSim,
+        ...stripEmbeddings(candidate),
         currentJobSim: currentSim,
       };
 
@@ -398,7 +488,7 @@ userRouter.post("/register_jd", async (req, res) => {
       "utf8"
     );
 
-    // Update the global ranking file (global_ranking.json) with each candidate's overall ranking
+    // Update the global ranking file (global_ranking.json) with each candidate's ranking per position
     const globalRankingPath = path.join(__dirname, "global_ranking.json");
     let globalRanking = {};
     if (fs.existsSync(globalRankingPath)) {
@@ -407,8 +497,11 @@ userRouter.post("/register_jd", async (req, res) => {
         ? JSON.parse(globalRankingContent)
         : {};
     }
+    if (!globalRanking[position]) {
+      globalRanking[position] = {};
+    }
     for (const candObj of candidateRankings) {
-      globalRanking[candObj.candidateId] = candObj.ranking;
+      globalRanking[position][candObj.candidateId] = candObj.ranking;
     }
     fs.writeFileSync(
       globalRankingPath,
@@ -416,7 +509,7 @@ userRouter.post("/register_jd", async (req, res) => {
       "utf8"
     );
 
-    // Prepare the job posting object to store in job_description.json
+    // Prepare the job posting object to store in job_description.json (without embeddings)
     const jobPosting = {
       username,
       Password: password,
@@ -440,13 +533,17 @@ userRouter.post("/register_jd", async (req, res) => {
       jobDescData[position] = {};
     }
     jobDescData[position][username] = {
-      ...jobPosting,
-      embeddings: jobDescObj.embeddings,
+      username,
+      Password: password,
+      Salary: salary,
+      job_description,
+      position,
+      candidates: candidateRankings,
     };
 
     fs.writeFileSync(jdFilePath, JSON.stringify(jobDescData, null, 2), "utf8");
 
-    // Respond with the job posting details along with the ranked candidate list (including text details)
+    // Respond with the job posting details along with the ranked candidate list (without embeddings)
     res.json({
       message: "Job description registered successfully",
       job_posting: {
@@ -479,7 +576,7 @@ userRouter.post("/uni_report", async (req, res) => {
       .status(400)
       .json({ error: "Both username and password are required." });
   }
-
+  // No user credential check is applied here since it's just a report endpoint.
   try {
     const candidateFilePath = path.join(__dirname, "candidate.json");
     let candidateData = {};
@@ -487,7 +584,7 @@ userRouter.post("/uni_report", async (req, res) => {
       const fileContent = fs.readFileSync(candidateFilePath, "utf8");
       candidateData = fileContent ? JSON.parse(fileContent) : {};
     }
-    // Read global ranking file to fetch overall ranks for candidates
+    // Read global ranking file to fetch overall ranks for candidates per position
     const globalRankingPath = path.join(__dirname, "global_ranking.json");
     let globalRanking = {};
     if (fs.existsSync(globalRankingPath)) {
@@ -498,18 +595,24 @@ userRouter.post("/uni_report", async (req, res) => {
     }
     let candidatesFromUni = [];
     // Iterate through each position and candidate
-    for (const position in candidateData) {
-      for (const candidateId in candidateData[position]) {
-        const candidate = candidateData[position][candidateId];
+    for (const pos in candidateData) {
+      for (const candidateId in candidateData[pos]) {
+        const candidate = candidateData[pos][candidateId];
         // Check if the candidate's University matches the provided username (assumed to be the university name)
         if (candidate.University === username) {
-          // Include overall_rank from global ranking if available
-          const overall_rank = globalRanking[candidateId] || "Not Ranked";
-          candidatesFromUni.push({ candidateId, overall_rank, ...candidate });
+          // Get overall rank from global ranking for this position
+          const overall_rank =
+            (globalRanking[pos] && globalRanking[pos][candidateId]) ||
+            "Not Ranked";
+          candidatesFromUni.push({
+            candidateId,
+            overall_rank,
+            ...stripEmbeddings(candidate),
+          });
         }
       }
     }
-    // Sort in ascending order by overall_rank (i.e., rank 1, 2, 3, ...)
+    // Sort in ascending order by overall_rank (i.e. rank 1, 2, 3, ...)
     candidatesFromUni.sort((a, b) => a.overall_rank - b.overall_rank);
     res.json({
       message: "University report generated successfully",
