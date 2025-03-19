@@ -19,7 +19,7 @@ app.use(express.json());
 // ---------------------------------------------
 // Existing Endpoint: Compute Cosine Similarity
 // ---------------------------------------------
-app.post("/cosine_similarity", async (req, res) => {
+app.post("http://0.0.0.0:8000/get_embedding", async (req, res) => {
   const { text1, text2 } = req.body;
   if (!text1 || !text2) {
     return res
@@ -28,7 +28,7 @@ app.post("/cosine_similarity", async (req, res) => {
   }
   try {
     const response = await axios.post(
-      "http://127.0.0.1:8000/cosine_similarity",
+      "https://jd-cv-fast-api.onrender.com/cosine_similarity",
       { text1, text2 }
     );
     res.json(response.data);
@@ -92,7 +92,7 @@ async function queryCV(question, cvText, attempt = 1) {
 // ---------------------------------------------
 async function getEmbedding(text, attempt = 1) {
   try {
-    const response = await axios.post("https:google.com/get_embedding", {
+    const response = await axios.post("http://0.0.0.0:8000/get_embedding", {
       text: text,
     });
     // Expected response: { "embedding": embedding_list }
@@ -145,6 +145,9 @@ userRouter.post("/register_candidate", async (req, res) => {
   }
 
   try {
+    // Convert position to an array if it's not already one
+    const positions = Array.isArray(position) ? position : [position];
+
     // Query the LLM (Mistral AI) for insights from the CV
     const skillsText = await queryCV(questions.skills, cv);
     const educationText = await queryCV(questions.education, cv);
@@ -160,14 +163,15 @@ userRouter.post("/register_candidate", async (req, res) => {
     // Build the candidate object using the new structure
     let candidateDetails = {
       Name: name,
-      Password: password, // Use provided password
-      Salary: salary, // Store provided salary
-      University:
-        position.toLowerCase() === "data scientist"
-          ? { name: university, rank: "University Rank Unknown" }
-          : university,
+      Password: password,
+      Salary: salary,
+      University: positions.some(
+        (pos) => pos.toLowerCase() === "data scientist"
+      )
+        ? { name: university, rank: "University Rank Unknown" }
+        : university,
       cv: cv,
-      position: position,
+      positions: positions, // store positions as an array
       skills: {
         text: skillsText,
         embedding: skillsEmbedding,
@@ -197,13 +201,13 @@ userRouter.post("/register_candidate", async (req, res) => {
       data = fileContent ? JSON.parse(fileContent) : {};
     }
 
-    // Ensure there is a category for the candidate's position
-    if (!data[position]) {
-      data[position] = {};
-    }
-
-    // Add/append the candidate under the candidate's number
-    data[position][number] = candidateDetails;
+    // For each provided position, add the candidate details
+    positions.forEach((pos) => {
+      if (!data[pos]) {
+        data[pos] = {};
+      }
+      data[pos][number] = candidateDetails;
+    });
 
     // Write updated data back to the file (formatted for readability)
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
@@ -224,7 +228,7 @@ userRouter.post("/register_candidate", async (req, res) => {
 app.use("/user", userRouter);
 
 app.get("/", (req, res) => {
-  res.status(200).json({ msg: "Hello world" });
+  res.status(200).json({ msg: "Hello world!" });
 });
 
 // ---------------------------------------------
