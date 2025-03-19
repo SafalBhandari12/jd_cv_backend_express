@@ -8,43 +8,15 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 require("dotenv").config();
 
-// Helper function: Delay for a given number of milliseconds
+app.use(express.json());
+
+// --------------------------------------------------
+// Helper functions for delays and ATS score calculation
+// --------------------------------------------------
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// --------------------------
-// User Registration Helpers
-// --------------------------
-// Registers a new user by storing the credentials in users.json
-function registerUser(username, password) {
-  const usersPath = path.join(__dirname, "users.json");
-  let users = {};
-  if (fs.existsSync(usersPath)) {
-    const content = fs.readFileSync(usersPath, "utf8");
-    users = content ? JSON.parse(content) : {};
-  }
-  if (users[username]) {
-    throw new Error("User already exists");
-  }
-  users[username] = { password };
-  fs.writeFileSync(usersPath, JSON.stringify(users, null, 2), "utf8");
-}
-
-// Verifies the given user credentials from users.json
-function verifyUser(username, password) {
-  const usersPath = path.join(__dirname, "users.json");
-  if (!fs.existsSync(usersPath)) return false;
-  const content = fs.readFileSync(usersPath, "utf8");
-  const users = content ? JSON.parse(content) : {};
-  return users[username] && users[username].password === password;
-}
-
-// --------------------------
-// Other Helpers
-// --------------------------
-
-// Function to calculate the ATS score (based on skills and experience text lengths)
 function calculateAtsScore(candidate) {
   const skillsTextLength =
     candidate.skills && candidate.skills.text
@@ -59,15 +31,15 @@ function calculateAtsScore(candidate) {
   return score.toFixed(2);
 }
 
-// Function to compute cosine similarity by calling the FastAPI endpoint.
-// The FastAPI expects a payload: { "embedding1": [...], "embedding2": [...] }
+// --------------------------------------------------
+// Cosine similarity: Calls FastAPI endpoint expecting payload {embedding1, embedding2}
+// --------------------------------------------------
 async function computeCosineSimilarity(embedding1, embedding2, attempt = 1) {
   try {
     const response = await axios.post("http://0.0.0.0:8000/cosine_similarity", {
       embedding1,
       embedding2,
     });
-    // FastAPI returns { "cosine_similarity": <value> }
     return response.data.cosine_similarity;
   } catch (error) {
     if (error.response && error.response.status === 429 && attempt < 3) {
@@ -85,34 +57,12 @@ async function computeCosineSimilarity(embedding1, embedding2, attempt = 1) {
   }
 }
 
-// Middleware to parse JSON bodies
-app.use(express.json());
-
-// ---------------------------------------------
-// Two question dictionaries: one for CV and one for JD
-// ---------------------------------------------
-const cvQuestions = {
-  skills: "What skills does this person have?",
-  education: "What education does this person have?",
-  responsibilities: "What responsibilities can this person handle?",
-  experience: "What experience does this person have?",
-};
-
-const jdQuestions = {
-  skills: "What skills are required?",
-  education: "What education is required?",
-  responsibilities: "What responsibilities should a person be able to handle?",
-  experience: "What experience is required?",
-};
-
-// ---------------------------------------------
-// Updated queryCV function which takes a 'type' parameter ("cv" or "jd")
-// ---------------------------------------------
+// --------------------------------------------------
+// Functions for querying the AI (Mistral) for insights and embeddings
+// --------------------------------------------------
 async function queryCV(question, text, type, attempt = 1) {
   const apiKey = process.env.MISTRAL_API_KEY;
   const url = "https://api.mistral.ai/v1/chat/completions";
-
-  // Choose a system prompt based on the type
   let systemPrompt;
   if (type === "cv") {
     systemPrompt =
@@ -123,7 +73,6 @@ async function queryCV(question, text, type, attempt = 1) {
   } else {
     systemPrompt = "You are an AI assistant that extracts useful insights.";
   }
-
   try {
     const response = await axios.post(
       url,
@@ -183,9 +132,9 @@ async function getEmbedding(text, attempt = 1) {
   }
 }
 
-// ---------------------------------------------
-// Helper function to remove embedding arrays from candidate objects for response
-// ---------------------------------------------
+// --------------------------------------------------
+// Helper to strip embedding arrays from candidate objects for responses
+// --------------------------------------------------
 function stripEmbeddings(candidateObj) {
   return {
     Name: candidateObj.Name,
@@ -212,13 +161,73 @@ function stripEmbeddings(candidateObj) {
   };
 }
 
-// ---------------------------------------------
-// User Router: User Registration, Candidate, Job Description, and University Report Endpoints
-// ---------------------------------------------
+// --------------------------------------------------
+// User registration helpers (store credentials in separate files)
+// --------------------------------------------------
+function registerCandidateUser(phone, password) {
+  const filePath = path.join(__dirname, "candidateUsers.json");
+  let users = {};
+  if (fs.existsSync(filePath)) {
+    const content = fs.readFileSync(filePath, "utf8");
+    users = content ? JSON.parse(content) : {};
+  }
+  if (users[phone]) throw new Error("Candidate user already exists");
+  users[phone] = { password };
+  fs.writeFileSync(filePath, JSON.stringify(users, null, 2), "utf8");
+}
+
+function verifyCandidateUser(phone, password) {
+  const filePath = path.join(__dirname, "candidateUsers.json");
+  if (!fs.existsSync(filePath)) return false;
+  const content = fs.readFileSync(filePath, "utf8");
+  const users = content ? JSON.parse(content) : {};
+  return users[phone] && users[phone].password === password;
+}
+
+function registerRecruiterUser(username, password) {
+  const filePath = path.join(__dirname, "recruiterUsers.json");
+  let users = {};
+  if (fs.existsSync(filePath)) {
+    const content = fs.readFileSync(filePath, "utf8");
+    users = content ? JSON.parse(content) : {};
+  }
+  if (users[username]) throw new Error("Recruiter already exists");
+  users[username] = { password };
+  fs.writeFileSync(filePath, JSON.stringify(users, null, 2), "utf8");
+}
+
+function verifyRecruiterUser(username, password) {
+  const filePath = path.join(__dirname, "recruiterUsers.json");
+  if (!fs.existsSync(filePath)) return false;
+  const content = fs.readFileSync(filePath, "utf8");
+  const users = content ? JSON.parse(content) : {};
+  return users[username] && users[username].password === password;
+}
+
+// --------------------------------------------------
+// Endpoints
+// --------------------------------------------------
 const userRouter = express.Router();
 
-// New Endpoint: User Registration
-userRouter.post("/register_user", async (req, res) => {
+// Candidate User Registration
+userRouter.post("/register_candidate_user", (req, res) => {
+  const { phone, password } = req.body;
+  if (!phone || !password) {
+    return res
+      .status(400)
+      .json({ error: "Both phone and password are required." });
+  }
+  try {
+    registerCandidateUser(phone, password);
+    res.json({ message: "Candidate user registered successfully", phone });
+  } catch (error) {
+    console.error("Error registering candidate user:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Recruiter Registration
+userRouter.post("/register_recruiter", (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res
@@ -226,20 +235,20 @@ userRouter.post("/register_user", async (req, res) => {
       .json({ error: "Both username and password are required." });
   }
   try {
-    registerUser(username, password);
-    res.json({ message: "User registered successfully", username });
+    registerRecruiterUser(username, password);
+    res.json({ message: "Recruiter registered successfully", username });
   } catch (error) {
-    console.error("Error registering user:", error);
+    console.error("Error registering recruiter:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Endpoint: Register Candidate (uses cvQuestions)
-// Now requires "registeredUsername" and "registeredPassword" to verify the user
-userRouter.post("/register_candidate", async (req, res) => {
+// Candidate Registration (CV submission) - Renamed endpoint "/candidate"
+// Requires candidate user credentials: candidatePhone and candidatePassword
+userRouter.post("/candidate", async (req, res) => {
   const {
-    registeredUsername,
-    registeredPassword,
+    candidatePhone,
+    candidatePassword,
     number,
     name,
     university,
@@ -248,17 +257,18 @@ userRouter.post("/register_candidate", async (req, res) => {
     password,
     salary,
   } = req.body;
-
-  if (!registeredUsername || !registeredPassword) {
+  if (!candidatePhone || !candidatePassword) {
     return res
       .status(400)
       .json({
         error:
-          "User credentials (registeredUsername, registeredPassword) are required.",
+          "Candidate user credentials are required (candidatePhone, candidatePassword).",
       });
   }
-  if (!verifyUser(registeredUsername, registeredPassword)) {
-    return res.status(401).json({ error: "Invalid user credentials." });
+  if (!verifyCandidateUser(candidatePhone, candidatePassword)) {
+    return res
+      .status(401)
+      .json({ error: "Invalid candidate user credentials." });
   }
   if (
     !number ||
@@ -271,15 +281,13 @@ userRouter.post("/register_candidate", async (req, res) => {
   ) {
     return res.status(400).json({
       error:
-        "All fields (number, name, university, cv, position, password, salary) are required.",
+        "All candidate fields (number, name, university, cv, position, password, salary) are required.",
     });
   }
   if (typeof position !== "string") {
     return res.status(400).json({ error: "Position must be a string." });
   }
-
   try {
-    // Use cvQuestions for CV extraction
     const skillsText = await queryCV(cvQuestions.skills, cv, "cv");
     const educationText = await queryCV(cvQuestions.education, cv, "cv");
     const responsibilitiesText = await queryCV(
@@ -294,7 +302,6 @@ userRouter.post("/register_candidate", async (req, res) => {
     const responsibilitiesEmbedding = await getEmbedding(responsibilitiesText);
     const experienceEmbedding = await getEmbedding(experienceText);
 
-    // Build candidate object (no university ranking, add similarityScores array)
     let candidateDetails = {
       Name: name,
       Password: password,
@@ -325,7 +332,6 @@ userRouter.post("/register_candidate", async (req, res) => {
 
     candidateDetails.ats = calculateAtsScore(candidateDetails);
 
-    // Save candidate details in candidate.json under key "position"
     const candidateFilePath = path.join(__dirname, "candidate.json");
     let candidateData = {};
     if (fs.existsSync(candidateFilePath)) {
@@ -354,26 +360,23 @@ userRouter.post("/register_candidate", async (req, res) => {
   }
 });
 
-// Endpoint: Register Job Description (uses jdQuestions)
-// User credentials are provided in "username" and "password", and are verified.
-userRouter.post("/register_jd", async (req, res) => {
+// Job Description Registration (JD submission) - Renamed endpoint "/jd"
+// Requires recruiter credentials: username and password (verified against recruiterUsers.json)
+userRouter.post("/jd", async (req, res) => {
   const { username, password, salary, job_description, position } = req.body;
-
   if (!username || !password || !salary || !job_description || !position) {
     return res.status(400).json({
       error:
         "All fields (username, password, salary, job_description, position) are required.",
     });
   }
-  if (!verifyUser(username, password)) {
-    return res.status(401).json({ error: "Invalid user credentials." });
+  if (!verifyRecruiterUser(username, password)) {
+    return res.status(401).json({ error: "Invalid recruiter credentials." });
   }
   if (typeof position !== "string") {
     return res.status(400).json({ error: "Position must be a string." });
   }
-
   try {
-    // Use jdQuestions for job description extraction
     const jdSkills = await queryCV(jdQuestions.skills, job_description, "jd");
     const jdEducation = await queryCV(
       jdQuestions.education,
@@ -396,7 +399,6 @@ userRouter.post("/register_jd", async (req, res) => {
     const jdResponsibilitiesEmbedding = await getEmbedding(jdResponsibilities);
     const jdExperienceEmbedding = await getEmbedding(jdExperience);
 
-    // Build the job description object (including embeddings)
     const jobDescObj = {
       username,
       Password: password,
@@ -414,7 +416,6 @@ userRouter.post("/register_jd", async (req, res) => {
       },
     };
 
-    // Retrieve candidates for the same position from candidate.json
     const candidateFilePath = path.join(__dirname, "candidate.json");
     let candidateData = {};
     if (fs.existsSync(candidateFilePath)) {
@@ -423,7 +424,6 @@ userRouter.post("/register_jd", async (req, res) => {
     }
     const candidatesForPosition = candidateData[position] || {};
 
-    // For each candidate, compute cosine similarity using embeddings and update overall similarity.
     let candidateRankings = [];
     for (const candId in candidatesForPosition) {
       const candidate = candidatesForPosition[candId];
@@ -446,14 +446,12 @@ userRouter.post("/register_jd", async (req, res) => {
       const currentSim =
         (simSkills + simEducation + simResponsibilities + simExperience) / 4;
 
-      // Update candidate's similarityScores array and compute new overall similarity
       if (!candidate.similarityScores) candidate.similarityScores = [];
       candidate.similarityScores.push(currentSim);
       const total = candidate.similarityScores.reduce((a, b) => a + b, 0);
       const overallSim = total / candidate.similarityScores.length;
       candidate.overall_similarity = overallSim;
 
-      // Prepare ranking object for response (strip embeddings)
       let candidateRankingObj = {
         candidateId: candId,
         ...stripEmbeddings(candidate),
@@ -463,7 +461,6 @@ userRouter.post("/register_jd", async (req, res) => {
       candidateRankings.push(candidateRankingObj);
     }
 
-    // Sort candidates by overall_similarity (descending) and assign ranking numbers
     candidateRankings.sort(
       (a, b) => b.overall_similarity - a.overall_similarity
     );
@@ -472,7 +469,6 @@ userRouter.post("/register_jd", async (req, res) => {
       ...cand,
     }));
 
-    // Update candidate records in candidate.json with new overall similarity for each candidate
     for (const candObj of candidateRankings) {
       if (
         candidateData[position] &&
@@ -488,7 +484,7 @@ userRouter.post("/register_jd", async (req, res) => {
       "utf8"
     );
 
-    // Update the global ranking file (global_ranking.json) with each candidate's ranking per position
+    // Global ranking per position stored in global_ranking.json
     const globalRankingPath = path.join(__dirname, "global_ranking.json");
     let globalRanking = {};
     if (fs.existsSync(globalRankingPath)) {
@@ -509,20 +505,6 @@ userRouter.post("/register_jd", async (req, res) => {
       "utf8"
     );
 
-    // Prepare the job posting object to store in job_description.json (without embeddings)
-    const jobPosting = {
-      username,
-      Password: password,
-      Salary: salary,
-      job_description,
-      position,
-      candidates: {},
-    };
-    candidateRankings.forEach((cand) => {
-      jobPosting.candidates[cand.candidateId] = cand;
-    });
-
-    // Read (or create) job_description.json and add this posting under the given position and username
     const jdFilePath = path.join(__dirname, "job_description.json");
     let jobDescData = {};
     if (fs.existsSync(jdFilePath)) {
@@ -543,7 +525,6 @@ userRouter.post("/register_jd", async (req, res) => {
 
     fs.writeFileSync(jdFilePath, JSON.stringify(jobDescData, null, 2), "utf8");
 
-    // Respond with the job posting details along with the ranked candidate list (without embeddings)
     res.json({
       message: "Job description registered successfully",
       job_posting: {
@@ -565,10 +546,7 @@ userRouter.post("/register_jd", async (req, res) => {
   }
 });
 
-// New Endpoint: University Report
-// When provided a payload with username (representing the university name) and password,
-// it returns all candidate details (including overall rank) whose "University" field matches the given username.
-// The response is sorted in ascending order by overall rank.
+// University Report endpoint remains unchanged.
 userRouter.post("/uni_report", async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
@@ -576,7 +554,6 @@ userRouter.post("/uni_report", async (req, res) => {
       .status(400)
       .json({ error: "Both username and password are required." });
   }
-  // No user credential check is applied here since it's just a report endpoint.
   try {
     const candidateFilePath = path.join(__dirname, "candidate.json");
     let candidateData = {};
@@ -584,7 +561,6 @@ userRouter.post("/uni_report", async (req, res) => {
       const fileContent = fs.readFileSync(candidateFilePath, "utf8");
       candidateData = fileContent ? JSON.parse(fileContent) : {};
     }
-    // Read global ranking file to fetch overall ranks for candidates per position
     const globalRankingPath = path.join(__dirname, "global_ranking.json");
     let globalRanking = {};
     if (fs.existsSync(globalRankingPath)) {
@@ -594,13 +570,10 @@ userRouter.post("/uni_report", async (req, res) => {
         : {};
     }
     let candidatesFromUni = [];
-    // Iterate through each position and candidate
     for (const pos in candidateData) {
       for (const candidateId in candidateData[pos]) {
         const candidate = candidateData[pos][candidateId];
-        // Check if the candidate's University matches the provided username (assumed to be the university name)
         if (candidate.University === username) {
-          // Get overall rank from global ranking for this position
           const overall_rank =
             (globalRanking[pos] && globalRanking[pos][candidateId]) ||
             "Not Ranked";
@@ -612,7 +585,6 @@ userRouter.post("/uni_report", async (req, res) => {
         }
       }
     }
-    // Sort in ascending order by overall_rank (i.e. rank 1, 2, 3, ...)
     candidatesFromUni.sort((a, b) => a.overall_rank - b.overall_rank);
     res.json({
       message: "University report generated successfully",
@@ -628,17 +600,13 @@ userRouter.post("/uni_report", async (req, res) => {
   }
 });
 
-// Mount the userRouter under the '/user' path
-app.use("/user", userRouter);
-
-// A simple test route
-app.get("/", (req, res) => {
+// Test route
+userRouter.get("/", (req, res) => {
   res.status(200).json({ msg: "Hello world!" });
 });
 
-// ---------------------------------------------
-// Start the Server with Error Handling
-// ---------------------------------------------
+app.use("/user", userRouter);
+
 const server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
