@@ -2,10 +2,10 @@ const express = require("express");
 const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
+const http = require("http");
 
 const app = express();
-const PORT = process.env.PORT || 3001;
-
+const PORT = process.env.PORT || 3000;
 require("dotenv").config();
 
 // Helper function: Delay for a given number of milliseconds
@@ -13,37 +13,54 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Function to calculate the ATS score (based on skills and experience text lengths)
+function calculateAtsScore(candidate) {
+  const skillsTextLength =
+    candidate.skills && candidate.skills.text
+      ? candidate.skills.text.length
+      : 0;
+  const experienceTextLength =
+    candidate.experience && candidate.experience.text
+      ? candidate.experience.text.length
+      : 0;
+  let score = (skillsTextLength + experienceTextLength) / 20;
+  if (score > 100) score = 100;
+  return score.toFixed(2);
+}
+
+// Function to compute cosine similarity by calling the FastAPI endpoint.
+// The FastAPI expects a payload: { "embedding1": [...], "embedding2": [...] }
+async function computeCosineSimilarity(embedding1, embedding2, attempt = 1) {
+  try {
+    const response = await axios.post("http://0.0.0.0:8000/cosine_similarity", {
+      embedding1,
+      embedding2,
+    });
+    // FastAPI returns { "cosine_similarity": <value> }
+    return response.data.cosine_similarity;
+  } catch (error) {
+    if (error.response && error.response.status === 429 && attempt < 3) {
+      console.warn(
+        `Rate limit exceeded in computeCosineSimilarity. Retrying attempt ${attempt}...`
+      );
+      await delay(2000);
+      return computeCosineSimilarity(embedding1, embedding2, attempt + 1);
+    }
+    console.error(
+      "Error computing cosine similarity:",
+      error.response ? error.response.data : error.message
+    );
+    return 0;
+  }
+}
+
 // Middleware to parse JSON bodies
 app.use(express.json());
 
 // ---------------------------------------------
-// Existing Endpoint: Compute Cosine Similarity
+// Utility Functions: queryCV and getEmbedding, and Questions
 // ---------------------------------------------
-app.post("http://0.0.0.0:8000/get_embedding", async (req, res) => {
-  const { text1, text2 } = req.body;
-  if (!text1 || !text2) {
-    return res
-      .status(400)
-      .json({ error: "Both text1 and text2 are required." });
-  }
-  try {
-    const response = await axios.post(
-      "https://jd-cv-fast-api.onrender.com/cosine_similarity",
-      { text1, text2 }
-    );
-    res.json(response.data);
-  } catch (error) {
-    console.error("Error computing similarity:", error);
-    res
-      .status(500)
-      .json({ error: "An error occurred while computing similarity." });
-  }
-});
-
-// ---------------------------------------------
-// Utility Function: Query Mistral AI for CV Insights with Retry
-// ---------------------------------------------
-async function queryCV(question, cvText, attempt = 1) {
+async function queryCV(question, text, attempt = 1) {
   const apiKey = process.env.MISTRAL_API_KEY;
   const url = "https://api.mistral.ai/v1/chat/completions";
   try {
@@ -54,12 +71,11 @@ async function queryCV(question, cvText, attempt = 1) {
         messages: [
           {
             role: "system",
-            content:
-              "You are an AI assistant that extracts useful insights from a CV.",
+            content: "You are an AI assistant that extracts useful insights.",
           },
           {
             role: "user",
-            content: `My CV content:\n\n${cvText}\n\n${question}`,
+            content: `Text:\n\n${text}\n\nQuestion: ${question}`,
           },
         ],
       },
@@ -76,33 +92,29 @@ async function queryCV(question, cvText, attempt = 1) {
       console.warn(
         `Rate limit exceeded in queryCV. Retrying attempt ${attempt}...`
       );
-      await delay(2000); // Wait 2 seconds before retrying
-      return queryCV(question, cvText, attempt + 1);
+      await delay(2000);
+      return queryCV(question, text, attempt + 1);
     }
     console.error(
       `Error querying CV for question "${question}":`,
       error.response ? error.response.data : error.message
     );
-    return null;
+    return "";
   }
 }
 
-// ---------------------------------------------
-// Utility Function: Get Embedding from API with Retry
-// ---------------------------------------------
 async function getEmbedding(text, attempt = 1) {
   try {
     const response = await axios.post("http://0.0.0.0:8000/get_embedding", {
-      text: text,
+      text,
     });
-    // Expected response: { "embedding": embedding_list }
     return response.data.embedding;
   } catch (error) {
     if (error.response && error.response.status === 429 && attempt < 3) {
       console.warn(
         `Rate limit exceeded in getEmbedding. Retrying attempt ${attempt}...`
       );
-      await delay(2000); // Wait 2 seconds before retrying
+      await delay(2000);
       return getEmbedding(text, attempt + 1);
     }
     console.error(
@@ -113,19 +125,20 @@ async function getEmbedding(text, attempt = 1) {
   }
 }
 
-// Define questions for CV analysis
+// Questions used for extracting insights
 const questions = {
-  skills: "What are the skills from this CV?",
-  education: "What are the educations from this CV?",
-  responsibilities: "What responsibilities can this person handle?",
-  experience: "What are the experiences mentioned in this CV?",
+  skills: "What are the skills required?",
+  education: "What are the educational requirements?",
+  responsibilities: "What are the key responsibilities?",
+  experience: "What experience is required?",
 };
 
 // ---------------------------------------------
-// User Router: Handle Candidate Registration and Other User Requests
+// User Router: Candidate and Job Description Endpoints
 // ---------------------------------------------
 const userRouter = express.Router();
 
+// Endpoint: Register Candidate
 userRouter.post("/register_candidate", async (req, res) => {
   const { number, name, university, cv, position, password, salary } = req.body;
 
@@ -144,34 +157,30 @@ userRouter.post("/register_candidate", async (req, res) => {
     });
   }
 
-  try {
-    // Convert position to an array if it's not already one
-    const positions = Array.isArray(position) ? position : [position];
+  if (typeof position !== "string") {
+    return res.status(400).json({ error: "Position must be a string." });
+  }
 
-    // Query the LLM (Mistral AI) for insights from the CV
+  try {
+    // Process the CV for each required field
     const skillsText = await queryCV(questions.skills, cv);
     const educationText = await queryCV(questions.education, cv);
     const responsibilitiesText = await queryCV(questions.responsibilities, cv);
     const experienceText = await queryCV(questions.experience, cv);
 
-    // Query the embedding API for each text insight
     const skillsEmbedding = await getEmbedding(skillsText);
     const educationEmbedding = await getEmbedding(educationText);
     const responsibilitiesEmbedding = await getEmbedding(responsibilitiesText);
     const experienceEmbedding = await getEmbedding(experienceText);
 
-    // Build the candidate object using the new structure
+    // Build candidate object (no redundant "category" field)
     let candidateDetails = {
       Name: name,
       Password: password,
       Salary: salary,
-      University: positions.some(
-        (pos) => pos.toLowerCase() === "data scientist"
-      )
-        ? { name: university, rank: "University Rank Unknown" }
-        : university,
+      University: university,
       cv: cv,
-      positions: positions, // store positions as an array
+      position: position,
       skills: {
         text: skillsText,
         embedding: skillsEmbedding,
@@ -188,29 +197,29 @@ userRouter.post("/register_candidate", async (req, res) => {
         text: experienceText,
         embedding: experienceEmbedding,
       },
-      position_rank: "Rank of the candidate dummy for now",
+      ats: "0",
+      university_ranking: "University Rank Unknown",
+      overall_ranking: "Overall Rank Unknown",
     };
 
-    // Path to candidate JSON file
-    const filePath = path.join(__dirname, "candidate.json");
+    candidateDetails.ats = calculateAtsScore(candidateDetails);
 
-    let data = {};
-    // If the file exists, read its current contents
-    if (fs.existsSync(filePath)) {
-      const fileContent = fs.readFileSync(filePath, "utf8");
-      data = fileContent ? JSON.parse(fileContent) : {};
+    // Save candidate details in candidate.json under key "position"
+    const candidateFilePath = path.join(__dirname, "candidate.json");
+    let candidateData = {};
+    if (fs.existsSync(candidateFilePath)) {
+      const fileContent = fs.readFileSync(candidateFilePath, "utf8");
+      candidateData = fileContent ? JSON.parse(fileContent) : {};
     }
-
-    // For each provided position, add the candidate details
-    positions.forEach((pos) => {
-      if (!data[pos]) {
-        data[pos] = {};
-      }
-      data[pos][number] = candidateDetails;
-    });
-
-    // Write updated data back to the file (formatted for readability)
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
+    if (!candidateData[position]) {
+      candidateData[position] = {};
+    }
+    candidateData[position][number] = candidateDetails;
+    fs.writeFileSync(
+      candidateFilePath,
+      JSON.stringify(candidateData, null, 2),
+      "utf8"
+    );
 
     res.json({
       message: "Candidate registered successfully",
@@ -224,16 +233,189 @@ userRouter.post("/register_candidate", async (req, res) => {
   }
 });
 
+// Endpoint: Register Job Description (register_jd)
+userRouter.post("/register_jd", async (req, res) => {
+  const { username, password, salary, job_description, position } = req.body;
+
+  if (!username || !password || !salary || !job_description || !position) {
+    return res.status(400).json({
+      error:
+        "All fields (username, password, salary, job_description, position) are required.",
+    });
+  }
+
+  if (typeof position !== "string") {
+    return res.status(400).json({ error: "Position must be a string." });
+  }
+
+  try {
+    // Process the job description similar to a CV
+    const jdSkills = await queryCV(questions.skills, job_description);
+    const jdEducation = await queryCV(questions.education, job_description);
+    const jdResponsibilities = await queryCV(
+      questions.responsibilities,
+      job_description
+    );
+    const jdExperience = await queryCV(questions.experience, job_description);
+
+    const jdSkillsEmbedding = await getEmbedding(jdSkills);
+    const jdEducationEmbedding = await getEmbedding(jdEducation);
+    const jdResponsibilitiesEmbedding = await getEmbedding(jdResponsibilities);
+    const jdExperienceEmbedding = await getEmbedding(jdExperience);
+
+    // Build the job description object (including embeddings)
+    const jobDescObj = {
+      username,
+      Password: password,
+      Salary: salary,
+      job_description,
+      position,
+      embeddings: {
+        skills: { text: jdSkills, embedding: jdSkillsEmbedding },
+        education: { text: jdEducation, embedding: jdEducationEmbedding },
+        responsibilities: {
+          text: jdResponsibilities,
+          embedding: jdResponsibilitiesEmbedding,
+        },
+        experience: { text: jdExperience, embedding: jdExperienceEmbedding },
+      },
+    };
+
+    // Retrieve candidates for the same position from candidate.json
+    const candidateFilePath = path.join(__dirname, "candidate.json");
+    let candidateData = {};
+    if (fs.existsSync(candidateFilePath)) {
+      const fileContent = fs.readFileSync(candidateFilePath, "utf8");
+      candidateData = fileContent ? JSON.parse(fileContent) : {};
+    }
+    const candidatesForPosition = candidateData[position] || {};
+
+    // For each candidate, compute cosine similarity using embeddings and prepare ranking object.
+    let candidateRankings = [];
+    for (const candId in candidatesForPosition) {
+      const candidate = candidatesForPosition[candId];
+      const simSkills = await computeCosineSimilarity(
+        candidate.skills.embedding,
+        jdSkillsEmbedding
+      );
+      const simEducation = await computeCosineSimilarity(
+        candidate.education.embedding,
+        jdEducationEmbedding
+      );
+      const simResponsibilities = await computeCosineSimilarity(
+        candidate.responsibilities.embedding,
+        jdResponsibilitiesEmbedding
+      );
+      const simExperience = await computeCosineSimilarity(
+        candidate.experience.embedding,
+        jdExperienceEmbedding
+      );
+      const averageSim =
+        (simSkills + simEducation + simResponsibilities + simExperience) / 4;
+
+      let candidateRankingObj = {
+        candidateId: candId,
+        Name: candidate.Name,
+        Password: candidate.Password,
+        Salary: candidate.Salary,
+        University: candidate.University,
+        cv: candidate.cv,
+        position: candidate.position,
+        // Include the text details for each field:
+        skills: candidate.skills.text,
+        education: candidate.education.text,
+        responsibilities: candidate.responsibilities.text,
+        experience: candidate.experience.text,
+        ats: candidate.ats,
+        university_ranking: candidate.university_ranking,
+        overall_ranking: candidate.overall_ranking,
+        similarityScore: averageSim,
+      };
+
+      candidateRankings.push(candidateRankingObj);
+    }
+
+    // Sort candidates by similarity score (descending) and assign ranking numbers
+    candidateRankings.sort((a, b) => b.similarityScore - a.similarityScore);
+    candidateRankings = candidateRankings.map((cand, index) => ({
+      ranking: index + 1,
+      ...cand,
+    }));
+
+    // Prepare the job posting object to store in job_description.json
+    const jobPosting = {
+      username,
+      Password: password,
+      Salary: salary,
+      job_description,
+      position,
+      candidates: {},
+    };
+    candidateRankings.forEach((cand) => {
+      jobPosting.candidates[cand.candidateId] = cand;
+    });
+
+    // Read (or create) job_description.json and add this posting under the given position and username
+    const jdFilePath = path.join(__dirname, "job_description.json");
+    let jobDescData = {};
+    if (fs.existsSync(jdFilePath)) {
+      const fileContent = fs.readFileSync(jdFilePath, "utf8");
+      jobDescData = fileContent ? JSON.parse(fileContent) : {};
+    }
+    if (!jobDescData[position]) {
+      jobDescData[position] = {};
+    }
+    jobDescData[position][username] = {
+      ...jobPosting,
+      embeddings: jobDescObj.embeddings,
+    };
+
+    fs.writeFileSync(jdFilePath, JSON.stringify(jobDescData, null, 2), "utf8");
+
+    // Respond with the job posting details along with the ranked candidate list (including text details)
+    res.json({
+      message: "Job description registered successfully",
+      job_posting: {
+        username,
+        Password: password,
+        Salary: salary,
+        job_description,
+        position,
+        candidates: candidateRankings,
+      },
+    });
+  } catch (error) {
+    console.error("Error registering job description:", error);
+    res
+      .status(500)
+      .json({
+        error: "An error occurred while registering the job description.",
+      });
+  }
+});
+
 // Mount the userRouter under the '/user' path
 app.use("/user", userRouter);
 
+// A simple test route
 app.get("/", (req, res) => {
   res.status(200).json({ msg: "Hello world!" });
 });
 
 // ---------------------------------------------
-// Start the Server
+// Start the Server with Error Handling
 // ---------------------------------------------
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+});
+
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(
+      `Port ${PORT} is already in use. Please close the other process or use a different port.`
+    );
+    process.exit(1);
+  } else {
+    throw error;
+  }
 });
