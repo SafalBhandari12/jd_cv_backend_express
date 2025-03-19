@@ -1,0 +1,69 @@
+{
+  "Full Stack Developer": {
+    "recruiter1": {
+      "username": "recruiter1",
+      "Password": "pass123",
+      "Salary": "150000",
+      "job_description": "We are seeking a Full Stack Developer with strong experience in JavaScript, Node.js, and React. The candidate should have proven skills in cloud deployments.",
+      "position": "Full Stack Developer",
+      "candidates": [
+        {
+          "ranking": 1,
+          "candidateId": "23456",
+          "Name": "Alice Johnson",
+          "Password": "alicepass",
+          "Salary": "115000",
+          "University": "MIT",
+          "cv": "Proficient in full stack development with a focus on modern JavaScript frameworks and microservices architecture.",
+          "position": "Full Stack Developer",
+          "skills": {
+            "text": "Full stack development, modern JavaScript frameworks, microservices architecture."
+          },
+          "education": {
+            "text": "The text does not provide any information about the person's education."
+          },
+          "responsibilities": {
+            "text": "This person can handle responsibilities such as:\n\n- Developing and maintaining full stack applications\n- Working with modern JavaScript frameworks (e.g., React, Angular, Vue.js)\n- Designing and implementing microservices architecture\n- Back-end development, including server-side logic and database integration\n- Front-end development, including creating responsive and user-friendly interfaces\n- Collaborating with cross-functional teams to define, design, and ship new features\n- Troubleshooting and debugging applications\n- Writing clean, efficient, and maintainable code\n- Ensuring the best possible performance, quality, and responsiveness of applications\n- staying up-to-date with emerging technologies and industry trends."
+          },
+          "experience": {
+            "text": "Full stack development, modern JavaScript frameworks, microservices architecture."
+          },
+          "ats": "8.10",
+          "overall_similarity": 0.5931378230452538,
+          "similarityScores": [
+            0.5931378230452538
+          ],
+          "currentJobSim": 0.5931378230452538
+        },
+        {
+          "ranking": 2,
+          "candidateId": "12345",
+          "Name": "John Doe",
+          "Password": "secret123",
+          "Salary": "120000",
+          "University": "MIT",
+          "cv": "Experienced full stack developer with 8 years of experience building scalable web applications.",
+          "position": "Full Stack Developer",
+          "skills": {
+            "text": "Web development, full stack development, building scalable web applications."
+          },
+          "education": {
+            "text": "The CV does not provide any information about the person's education."
+          },
+          "responsibilities": {
+            "text": "This person can handle responsibilities such as:\n\n- Designing and developing scalable web applications\n- Working with both front-end and back-end technologies\n- Creating and maintaining databases\n- Implementing server-side logic\n- Ensuring cross-platform optimization\n- Collaborating with designers and other developers\n- Troubleshooting and debugging applications\n- Writing clean, efficient, and maintainable code\n- Participating in code reviews\n- Staying up-to-date with emerging technologies and industry trends"
+          },
+          "experience": {
+            "text": "Full stack development, web applications, scalable systems. 8 years of this experience."
+          },
+          "ats": "8.15",
+          "overall_similarity": 0.5649557858705521,
+          "similarityScores": [
+            0.5649557858705521
+          ],
+          "currentJobSim": 0.5649557858705521
+        }
+      ]
+    }
+  }
+}
