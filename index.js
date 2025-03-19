@@ -58,21 +58,48 @@ async function computeCosineSimilarity(embedding1, embedding2, attempt = 1) {
 app.use(express.json());
 
 // ---------------------------------------------
-// Utility Functions: queryCV and getEmbedding, and Questions
+// Two question dictionaries: one for CV and one for JD
 // ---------------------------------------------
-async function queryCV(question, text, attempt = 1) {
+const cvQuestions = {
+  skills: "What skills does this person have?",
+  education: "What education does this person have?",
+  responsibilities: "What responsibilities can this person handle?",
+  experience: "What experience does this person have?",
+};
+
+const jdQuestions = {
+  skills: "What skills are required?",
+  education: "What education is required?",
+  responsibilities: "What responsibilities should a person be able to handle?",
+  experience: "What experience is required?",
+};
+
+// ---------------------------------------------
+// Updated queryCV function which takes a 'type' parameter ("cv" or "jd")
+// ---------------------------------------------
+async function queryCV(question, text, type, attempt = 1) {
   const apiKey = process.env.MISTRAL_API_KEY;
   const url = "https://api.mistral.ai/v1/chat/completions";
+
+  // Choose a system prompt based on the type
+  let systemPrompt;
+  if (type === "cv") {
+    systemPrompt =
+      "You are an AI assistant that extracts useful insights from a CV. Answer directly without any preamble.";
+  } else if (type === "jd") {
+    systemPrompt =
+      "You are an AI assistant that extracts useful insights from a job description. Answer directly without any preamble.";
+  } else {
+    systemPrompt = "You are an AI assistant that extracts useful insights.";
+  }
+
   try {
     const response = await axios.post(
       url,
       {
         model: "mistral-large-2411",
         messages: [
-          {
-            role: "system",
-            content: "You are an AI assistant that extracts useful insights.",
-          },
+          { role: "system", content: systemPrompt },
           {
             role: "user",
             content: `Text:\n\n${text}\n\nQuestion: ${question}`,
@@ -93,7 +120,7 @@ async function queryCV(question, text, attempt = 1) {
         `Rate limit exceeded in queryCV. Retrying attempt ${attempt}...`
       );
       await delay(2000);
-      return queryCV(question, text, attempt + 1);
+      return queryCV(question, text, type, attempt + 1);
     }
     console.error(
       `Error querying CV for question "${question}":`,
@@ -125,20 +152,12 @@ async function getEmbedding(text, attempt = 1) {
   }
 }
 
-// Questions used for extracting insights
-const questions = {
-  skills: "What are the skills required?",
-  education: "What are the educational requirements?",
-  responsibilities: "What are the key responsibilities?",
-  experience: "What experience is required?",
-};
-
 // ---------------------------------------------
-// User Router: Candidate and Job Description Endpoints
+// User Router: Candidate, Job Description, and University Report Endpoints
 // ---------------------------------------------
 const userRouter = express.Router();
 
-// Endpoint: Register Candidate
+// Endpoint: Register Candidate (uses cvQuestions)
 userRouter.post("/register_candidate", async (req, res) => {
   const { number, name, university, cv, position, password, salary } = req.body;
 
@@ -162,18 +181,22 @@ userRouter.post("/register_candidate", async (req, res) => {
   }
 
   try {
-    // Process the CV for each required field
-    const skillsText = await queryCV(questions.skills, cv);
-    const educationText = await queryCV(questions.education, cv);
-    const responsibilitiesText = await queryCV(questions.responsibilities, cv);
-    const experienceText = await queryCV(questions.experience, cv);
+    // Use cvQuestions for CV extraction
+    const skillsText = await queryCV(cvQuestions.skills, cv, "cv");
+    const educationText = await queryCV(cvQuestions.education, cv, "cv");
+    const responsibilitiesText = await queryCV(
+      cvQuestions.responsibilities,
+      cv,
+      "cv"
+    );
+    const experienceText = await queryCV(cvQuestions.experience, cv, "cv");
 
     const skillsEmbedding = await getEmbedding(skillsText);
     const educationEmbedding = await getEmbedding(educationText);
     const responsibilitiesEmbedding = await getEmbedding(responsibilitiesText);
     const experienceEmbedding = await getEmbedding(experienceText);
 
-    // Build candidate object (no redundant "category" field)
+    // Build candidate object (no university ranking, add similarityScores array)
     let candidateDetails = {
       Name: name,
       Password: password,
@@ -198,8 +221,8 @@ userRouter.post("/register_candidate", async (req, res) => {
         embedding: experienceEmbedding,
       },
       ats: "0",
-      university_ranking: "University Rank Unknown",
-      overall_ranking: "Overall Rank Unknown",
+      overall_similarity: 0,
+      similarityScores: [],
     };
 
     candidateDetails.ats = calculateAtsScore(candidateDetails);
@@ -233,7 +256,7 @@ userRouter.post("/register_candidate", async (req, res) => {
   }
 });
 
-// Endpoint: Register Job Description (register_jd)
+// Endpoint: Register Job Description (uses jdQuestions)
 userRouter.post("/register_jd", async (req, res) => {
   const { username, password, salary, job_description, position } = req.body;
 
@@ -249,14 +272,23 @@ userRouter.post("/register_jd", async (req, res) => {
   }
 
   try {
-    // Process the job description similar to a CV
-    const jdSkills = await queryCV(questions.skills, job_description);
-    const jdEducation = await queryCV(questions.education, job_description);
-    const jdResponsibilities = await queryCV(
-      questions.responsibilities,
-      job_description
+    // Use jdQuestions for job description extraction
+    const jdSkills = await queryCV(jdQuestions.skills, job_description, "jd");
+    const jdEducation = await queryCV(
+      jdQuestions.education,
+      job_description,
+      "jd"
     );
-    const jdExperience = await queryCV(questions.experience, job_description);
+    const jdResponsibilities = await queryCV(
+      jdQuestions.responsibilities,
+      job_description,
+      "jd"
+    );
+    const jdExperience = await queryCV(
+      jdQuestions.experience,
+      job_description,
+      "jd"
+    );
 
     const jdSkillsEmbedding = await getEmbedding(jdSkills);
     const jdEducationEmbedding = await getEmbedding(jdEducation);
@@ -290,7 +322,7 @@ userRouter.post("/register_jd", async (req, res) => {
     }
     const candidatesForPosition = candidateData[position] || {};
 
-    // For each candidate, compute cosine similarity using embeddings and prepare ranking object.
+    // For each candidate, compute cosine similarity using embeddings and update overall similarity.
     let candidateRankings = [];
     for (const candId in candidatesForPosition) {
       const candidate = candidatesForPosition[candId];
@@ -310,9 +342,17 @@ userRouter.post("/register_jd", async (req, res) => {
         candidate.experience.embedding,
         jdExperienceEmbedding
       );
-      const averageSim =
+      const currentSim =
         (simSkills + simEducation + simResponsibilities + simExperience) / 4;
 
+      // Update candidate's similarityScores array and compute new overall similarity
+      if (!candidate.similarityScores) candidate.similarityScores = [];
+      candidate.similarityScores.push(currentSim);
+      const total = candidate.similarityScores.reduce((a, b) => a + b, 0);
+      const overallSim = total / candidate.similarityScores.length;
+      candidate.overall_similarity = overallSim;
+
+      // Prepare ranking object for response
       let candidateRankingObj = {
         candidateId: candId,
         Name: candidate.Name,
@@ -321,26 +361,60 @@ userRouter.post("/register_jd", async (req, res) => {
         University: candidate.University,
         cv: candidate.cv,
         position: candidate.position,
-        // Include the text details for each field:
         skills: candidate.skills.text,
         education: candidate.education.text,
         responsibilities: candidate.responsibilities.text,
         experience: candidate.experience.text,
         ats: candidate.ats,
-        university_ranking: candidate.university_ranking,
-        overall_ranking: candidate.overall_ranking,
-        similarityScore: averageSim,
+        overall_similarity: overallSim,
+        currentJobSim: currentSim,
       };
 
       candidateRankings.push(candidateRankingObj);
     }
 
-    // Sort candidates by similarity score (descending) and assign ranking numbers
-    candidateRankings.sort((a, b) => b.similarityScore - a.similarityScore);
+    // Sort candidates by overall_similarity (descending) and assign ranking numbers
+    candidateRankings.sort(
+      (a, b) => b.overall_similarity - a.overall_similarity
+    );
     candidateRankings = candidateRankings.map((cand, index) => ({
       ranking: index + 1,
       ...cand,
     }));
+
+    // Update candidate records in candidate.json with new overall similarity for each candidate
+    for (const candObj of candidateRankings) {
+      if (
+        candidateData[position] &&
+        candidateData[position][candObj.candidateId]
+      ) {
+        candidateData[position][candObj.candidateId].overall_similarity =
+          candObj.overall_similarity;
+      }
+    }
+    fs.writeFileSync(
+      candidateFilePath,
+      JSON.stringify(candidateData, null, 2),
+      "utf8"
+    );
+
+    // Update the global ranking file (global_ranking.json) with each candidate's overall ranking
+    const globalRankingPath = path.join(__dirname, "global_ranking.json");
+    let globalRanking = {};
+    if (fs.existsSync(globalRankingPath)) {
+      const globalRankingContent = fs.readFileSync(globalRankingPath, "utf8");
+      globalRanking = globalRankingContent
+        ? JSON.parse(globalRankingContent)
+        : {};
+    }
+    for (const candObj of candidateRankings) {
+      globalRanking[candObj.candidateId] = candObj.ranking;
+    }
+    fs.writeFileSync(
+      globalRankingPath,
+      JSON.stringify(globalRanking, null, 2),
+      "utf8"
+    );
 
     // Prepare the job posting object to store in job_description.json
     const jobPosting = {
@@ -390,6 +464,63 @@ userRouter.post("/register_jd", async (req, res) => {
       .status(500)
       .json({
         error: "An error occurred while registering the job description.",
+      });
+  }
+});
+
+// New Endpoint: University Report
+// When provided a payload with username (representing the university name) and password,
+// it returns all candidate details (including overall rank) whose "University" field matches the given username.
+// The response is sorted in ascending order by overall rank.
+userRouter.post("/uni_report", async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res
+      .status(400)
+      .json({ error: "Both username and password are required." });
+  }
+
+  try {
+    const candidateFilePath = path.join(__dirname, "candidate.json");
+    let candidateData = {};
+    if (fs.existsSync(candidateFilePath)) {
+      const fileContent = fs.readFileSync(candidateFilePath, "utf8");
+      candidateData = fileContent ? JSON.parse(fileContent) : {};
+    }
+    // Read global ranking file to fetch overall ranks for candidates
+    const globalRankingPath = path.join(__dirname, "global_ranking.json");
+    let globalRanking = {};
+    if (fs.existsSync(globalRankingPath)) {
+      const globalRankingContent = fs.readFileSync(globalRankingPath, "utf8");
+      globalRanking = globalRankingContent
+        ? JSON.parse(globalRankingContent)
+        : {};
+    }
+    let candidatesFromUni = [];
+    // Iterate through each position and candidate
+    for (const position in candidateData) {
+      for (const candidateId in candidateData[position]) {
+        const candidate = candidateData[position][candidateId];
+        // Check if the candidate's University matches the provided username (assumed to be the university name)
+        if (candidate.University === username) {
+          // Include overall_rank from global ranking if available
+          const overall_rank = globalRanking[candidateId] || "Not Ranked";
+          candidatesFromUni.push({ candidateId, overall_rank, ...candidate });
+        }
+      }
+    }
+    // Sort in ascending order by overall_rank (i.e., rank 1, 2, 3, ...)
+    candidatesFromUni.sort((a, b) => a.overall_rank - b.overall_rank);
+    res.json({
+      message: "University report generated successfully",
+      candidates: candidatesFromUni,
+    });
+  } catch (error) {
+    console.error("Error generating university report:", error);
+    res
+      .status(500)
+      .json({
+        error: "An error occurred while generating the university report.",
       });
   }
 });
