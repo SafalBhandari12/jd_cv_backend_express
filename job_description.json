@@ -1,0 +1,69 @@
+{
+  "data scientist": {
+    "recruiter_ds": {
+      "username": "recruiter_ds",
+      "Password": "recruiterPassDS",
+      "Salary": "120000",
+      "job_description": "Looking for a data scientist with strong Python skills, experience in machine learning, and expertise in data visualization.",
+      "position": "data scientist",
+      "candidates": [
+        {
+          "ranking": 1,
+          "candidateId": "DS001",
+          "Name": "Alice Johnson",
+          "Password": "alicePass123",
+          "Salary": "120000",
+          "University": "MIT",
+          "cv": "Experienced in Python, R, machine learning, and data analysis.",
+          "position": "data scientist",
+          "skills": {
+            "text": "Python, R, machine learning, data analysis."
+          },
+          "education": {
+            "text": "The text does not provide any information about the person's education."
+          },
+          "responsibilities": {
+            "text": "Data analysis, machine learning model development, statistical analysis using R, and scripting or automation tasks using Python."
+          },
+          "experience": {
+            "text": "Python, R, machine learning, data analysis."
+          },
+          "ats": "4.30",
+          "overall_similarity": 0.6472700759768486,
+          "similarityScores": [
+            0.6472700759768486
+          ],
+          "currentJobSim": 0.6472700759768486
+        },
+        {
+          "ranking": 2,
+          "candidateId": "DS002",
+          "Name": "Carol Lee",
+          "Password": "carolData",
+          "Salary": "125000",
+          "University": "Harvard",
+          "cv": "Skilled in data mining, Python programming, and statistical modeling.",
+          "position": "data scientist",
+          "skills": {
+            "text": "Data mining, Python programming, statistical modeling."
+          },
+          "education": {
+            "text": "The text does not provide any information about the person's education."
+          },
+          "responsibilities": {
+            "text": "Data analysis, predictive modeling, machine learning tasks, scripting and automation using Python, statistical analysis, and interpreting complex data sets."
+          },
+          "experience": {
+            "text": "Data mining, Python programming, statistical modeling."
+          },
+          "ats": "5.40",
+          "overall_similarity": 0.6363494172692299,
+          "similarityScores": [
+            0.6363494172692299
+          ],
+          "currentJobSim": 0.6363494172692299
+        }
+      ]
+    }
+  }
+}
