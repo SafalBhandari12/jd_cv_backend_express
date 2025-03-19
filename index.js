@@ -182,7 +182,7 @@ function stripEmbeddings(candidateObj) {
 }
 
 // ---------------------------------------------
-// User Router: Candidate, Job Description, and University Report Endpoints
+// User Router: Candidate, Job Description, University Report, and Login Endpoints
 // ---------------------------------------------
 const userRouter = express.Router();
 
@@ -225,7 +225,7 @@ userRouter.post("/register_candidate", async (req, res) => {
     const responsibilitiesEmbedding = await getEmbedding(responsibilitiesText);
     const experienceEmbedding = await getEmbedding(experienceText);
 
-    // Build candidate object (no university ranking, add similarityScores array)
+    // Build candidate object (with similarityScores array)
     let candidateDetails = {
       Name: name,
       Password: password,
@@ -283,6 +283,109 @@ userRouter.post("/register_candidate", async (req, res) => {
     res
       .status(500)
       .json({ error: "An error occurred while registering the candidate." });
+  }
+});
+
+// New Endpoint: add_candidate_cv
+// Allows a candidate to submit their CV for an additional position.
+// The logic is similar to the registration process.
+userRouter.post("/add_candidate_cv", async (req, res) => {
+  const { number, name, university, cv, position, password, salary } = req.body;
+
+  if (
+    !number ||
+    !name ||
+    !university ||
+    !cv ||
+    !position ||
+    !password ||
+    !salary
+  ) {
+    return res.status(400).json({
+      error:
+        "All fields (number, name, university, cv, position, password, salary) are required.",
+    });
+  }
+
+  if (typeof position !== "string") {
+    return res.status(400).json({ error: "Position must be a string." });
+  }
+
+  try {
+    // Process the new CV using cvQuestions
+    const skillsText = await queryCV(cvQuestions.skills, cv, "cv");
+    const educationText = await queryCV(cvQuestions.education, cv, "cv");
+    const responsibilitiesText = await queryCV(
+      cvQuestions.responsibilities,
+      cv,
+      "cv"
+    );
+    const experienceText = await queryCV(cvQuestions.experience, cv, "cv");
+
+    const skillsEmbedding = await getEmbedding(skillsText);
+    const educationEmbedding = await getEmbedding(educationText);
+    const responsibilitiesEmbedding = await getEmbedding(responsibilitiesText);
+    const experienceEmbedding = await getEmbedding(experienceText);
+
+    // Build candidate details object
+    let candidateDetails = {
+      Name: name,
+      Password: password,
+      Salary: salary,
+      University: university,
+      cv: cv,
+      position: position,
+      skills: {
+        text: skillsText,
+        embedding: skillsEmbedding,
+      },
+      education: {
+        text: educationText,
+        embedding: educationEmbedding,
+      },
+      responsibilities: {
+        text: responsibilitiesText,
+        embedding: responsibilitiesEmbedding,
+      },
+      experience: {
+        text: experienceText,
+        embedding: experienceEmbedding,
+      },
+      ats: "0",
+      overall_similarity: 0,
+      similarityScores: [],
+    };
+
+    candidateDetails.ats = calculateAtsScore(candidateDetails);
+
+    // Save/update candidate details in candidate.json under the new position
+    const candidateFilePath = path.join(__dirname, "candidate.json");
+    let candidateData = {};
+    if (fs.existsSync(candidateFilePath)) {
+      const fileContent = fs.readFileSync(candidateFilePath, "utf8");
+      candidateData = fileContent ? JSON.parse(fileContent) : {};
+    }
+    if (!candidateData[position]) {
+      candidateData[position] = {};
+    }
+    // This endpoint allows adding a new entry for the candidate under the new position.
+    candidateData[position][number] = candidateDetails;
+    fs.writeFileSync(
+      candidateFilePath,
+      JSON.stringify(candidateData, null, 2),
+      "utf8"
+    );
+
+    res.json({
+      message: "Candidate CV added for new position successfully",
+      candidate: stripEmbeddings(candidateDetails),
+    });
+  } catch (error) {
+    console.error("Error adding candidate CV for new position:", error);
+    res.status(500).json({
+      error:
+        "An error occurred while adding the candidate CV for the new position.",
+    });
   }
 });
 
@@ -375,14 +478,12 @@ userRouter.post("/register_jd", async (req, res) => {
       const currentSim =
         (simSkills + simEducation + simResponsibilities + simExperience) / 4;
 
-      // Update candidate's similarityScores array and compute new overall similarity
       if (!candidate.similarityScores) candidate.similarityScores = [];
       candidate.similarityScores.push(currentSim);
       const total = candidate.similarityScores.reduce((a, b) => a + b, 0);
       const overallSim = total / candidate.similarityScores.length;
       candidate.overall_similarity = overallSim;
 
-      // Prepare ranking object for response (strip embeddings)
       let candidateRankingObj = {
         candidateId: candId,
         ...stripEmbeddings(candidate),
@@ -392,7 +493,6 @@ userRouter.post("/register_jd", async (req, res) => {
       candidateRankings.push(candidateRankingObj);
     }
 
-    // Sort candidates by overall_similarity (descending) and assign ranking numbers
     candidateRankings.sort(
       (a, b) => b.overall_similarity - a.overall_similarity
     );
@@ -468,12 +568,10 @@ userRouter.post("/register_jd", async (req, res) => {
       job_description,
       position,
       candidates: candidateRankings,
-      // We don't include embeddings in the response
     };
 
     fs.writeFileSync(jdFilePath, JSON.stringify(jobDescData, null, 2), "utf8");
 
-    // Respond with the job posting details along with the ranked candidate list (without embeddings)
     res.json({
       message: "Job description registered successfully",
       job_posting: {
@@ -487,18 +585,204 @@ userRouter.post("/register_jd", async (req, res) => {
     });
   } catch (error) {
     console.error("Error registering job description:", error);
-    res
-      .status(500)
-      .json({
-        error: "An error occurred while registering the job description.",
-      });
+    res.status(500).json({
+      error: "An error occurred while registering the job description.",
+    });
+  }
+});
+
+// New Endpoint: add_job_description
+// Allows a recruiter to add a job description for an additional position.
+userRouter.post("/add_job_description", async (req, res) => {
+  const { username, password, salary, job_description, position } = req.body;
+
+  if (!username || !password || !salary || !job_description || !position) {
+    return res.status(400).json({
+      error:
+        "All fields (username, password, salary, job_description, position) are required.",
+    });
+  }
+
+  if (typeof position !== "string") {
+    return res.status(400).json({ error: "Position must be a string." });
+  }
+
+  try {
+    // Process the job description using jdQuestions
+    const jdSkills = await queryCV(jdQuestions.skills, job_description, "jd");
+    const jdEducation = await queryCV(
+      jdQuestions.education,
+      job_description,
+      "jd"
+    );
+    const jdResponsibilities = await queryCV(
+      jdQuestions.responsibilities,
+      job_description,
+      "jd"
+    );
+    const jdExperience = await queryCV(
+      jdQuestions.experience,
+      job_description,
+      "jd"
+    );
+
+    const jdSkillsEmbedding = await getEmbedding(jdSkills);
+    const jdEducationEmbedding = await getEmbedding(jdEducation);
+    const jdResponsibilitiesEmbedding = await getEmbedding(jdResponsibilities);
+    const jdExperienceEmbedding = await getEmbedding(jdExperience);
+
+    const jobDescObj = {
+      username,
+      Password: password,
+      Salary: salary,
+      job_description,
+      position,
+      embeddings: {
+        skills: { text: jdSkills, embedding: jdSkillsEmbedding },
+        education: { text: jdEducation, embedding: jdEducationEmbedding },
+        responsibilities: {
+          text: jdResponsibilities,
+          embedding: jdResponsibilitiesEmbedding,
+        },
+        experience: { text: jdExperience, embedding: jdExperienceEmbedding },
+      },
+    };
+
+    // Retrieve candidates for the same position from candidate.json
+    const candidateFilePath = path.join(__dirname, "candidate.json");
+    let candidateData = {};
+    if (fs.existsSync(candidateFilePath)) {
+      const fileContent = fs.readFileSync(candidateFilePath, "utf8");
+      candidateData = fileContent ? JSON.parse(fileContent) : {};
+    }
+    const candidatesForPosition = candidateData[position] || {};
+
+    let candidateRankings = [];
+    for (const candId in candidatesForPosition) {
+      const candidate = candidatesForPosition[candId];
+      const simSkills = await computeCosineSimilarity(
+        candidate.skills.embedding,
+        jdSkillsEmbedding
+      );
+      const simEducation = await computeCosineSimilarity(
+        candidate.education.embedding,
+        jdEducationEmbedding
+      );
+      const simResponsibilities = await computeCosineSimilarity(
+        candidate.responsibilities.embedding,
+        jdResponsibilitiesEmbedding
+      );
+      const simExperience = await computeCosineSimilarity(
+        candidate.experience.embedding,
+        jdExperienceEmbedding
+      );
+      const currentSim =
+        (simSkills + simEducation + simResponsibilities + simExperience) / 4;
+
+      if (!candidate.similarityScores) candidate.similarityScores = [];
+      candidate.similarityScores.push(currentSim);
+      const total = candidate.similarityScores.reduce((a, b) => a + b, 0);
+      const overallSim = total / candidate.similarityScores.length;
+      candidate.overall_similarity = overallSim;
+
+      let candidateRankingObj = {
+        candidateId: candId,
+        ...stripEmbeddings(candidate),
+        currentJobSim: currentSim,
+      };
+
+      candidateRankings.push(candidateRankingObj);
+    }
+
+    candidateRankings.sort(
+      (a, b) => b.overall_similarity - a.overall_similarity
+    );
+    candidateRankings = candidateRankings.map((cand, index) => ({
+      ranking: index + 1,
+      ...cand,
+    }));
+
+    // Update candidate records in candidate.json
+    for (const candObj of candidateRankings) {
+      if (
+        candidateData[position] &&
+        candidateData[position][candObj.candidateId]
+      ) {
+        candidateData[position][candObj.candidateId].overall_similarity =
+          candObj.overall_similarity;
+      }
+    }
+    fs.writeFileSync(
+      candidateFilePath,
+      JSON.stringify(candidateData, null, 2),
+      "utf8"
+    );
+
+    // Update global ranking file
+    const globalRankingPath = path.join(__dirname, "global_ranking.json");
+    let globalRanking = {};
+    if (fs.existsSync(globalRankingPath)) {
+      const globalRankingContent = fs.readFileSync(globalRankingPath, "utf8");
+      globalRanking = globalRankingContent
+        ? JSON.parse(globalRankingContent)
+        : {};
+    }
+    if (!globalRanking[position]) {
+      globalRanking[position] = {};
+    }
+    for (const candObj of candidateRankings) {
+      globalRanking[position][candObj.candidateId] = candObj.ranking;
+    }
+    fs.writeFileSync(
+      globalRankingPath,
+      JSON.stringify(globalRanking, null, 2),
+      "utf8"
+    );
+
+    // Store job description in job_description.json
+    const jdFilePath = path.join(__dirname, "job_description.json");
+    let jobDescData = {};
+    if (fs.existsSync(jdFilePath)) {
+      const fileContent = fs.readFileSync(jdFilePath, "utf8");
+      jobDescData = fileContent ? JSON.parse(fileContent) : {};
+    }
+    if (!jobDescData[position]) {
+      jobDescData[position] = {};
+    }
+    jobDescData[position][username] = {
+      username,
+      Password: password,
+      Salary: salary,
+      job_description,
+      position,
+      candidates: candidateRankings,
+    };
+
+    fs.writeFileSync(jdFilePath, JSON.stringify(jobDescData, null, 2), "utf8");
+
+    res.json({
+      message: "Job description added for new position successfully",
+      job_posting: {
+        username,
+        Password: password,
+        Salary: salary,
+        job_description,
+        position,
+        candidates: candidateRankings,
+      },
+    });
+  } catch (error) {
+    console.error("Error adding job description for new position:", error);
+    res.status(500).json({
+      error:
+        "An error occurred while adding the job description for the new position.",
+    });
   }
 });
 
 // New Endpoint: University Report
 // When provided a payload with username (representing the university name) and password,
-// it returns all candidate details (including overall rank) whose "University" field matches the given username.
-// The response is sorted in ascending order by overall rank.
+// it returns all candidate details whose "University" field matches the given username.
 userRouter.post("/uni_report", async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
@@ -514,7 +798,6 @@ userRouter.post("/uni_report", async (req, res) => {
       const fileContent = fs.readFileSync(candidateFilePath, "utf8");
       candidateData = fileContent ? JSON.parse(fileContent) : {};
     }
-    // Read global ranking file to fetch overall ranks for candidates per position
     const globalRankingPath = path.join(__dirname, "global_ranking.json");
     let globalRanking = {};
     if (fs.existsSync(globalRankingPath)) {
@@ -524,17 +807,13 @@ userRouter.post("/uni_report", async (req, res) => {
         : {};
     }
     let candidatesFromUni = [];
-    // Iterate through each position and candidate
     for (const pos in candidateData) {
       for (const candidateId in candidateData[pos]) {
         const candidate = candidateData[pos][candidateId];
-        // Check if the candidate's University matches the provided username (assumed to be the university name)
         if (candidate.University === username) {
-          // Get overall rank from global ranking for this position
           const overall_rank =
             (globalRanking[pos] && globalRanking[pos][candidateId]) ||
             "Not Ranked";
-          // Prepare candidate data without embeddings
           candidatesFromUni.push({
             candidateId,
             overall_rank,
@@ -543,7 +822,6 @@ userRouter.post("/uni_report", async (req, res) => {
         }
       }
     }
-    // Sort in ascending order by overall_rank (i.e. rank 1, 2, 3, ...)
     candidatesFromUni.sort((a, b) => a.overall_rank - b.overall_rank);
     res.json({
       message: "University report generated successfully",
@@ -551,11 +829,98 @@ userRouter.post("/uni_report", async (req, res) => {
     });
   } catch (error) {
     console.error("Error generating university report:", error);
+    res.status(500).json({
+      error: "An error occurred while generating the university report.",
+    });
+  }
+});
+
+// ---------------------------------------------
+// New Login Endpoints (login_user & login_candidate)
+// ---------------------------------------------
+userRouter.post("/login_user", async (req, res) => {
+  const { number, password } = req.body;
+  if (!number || !password) {
+    return res
+      .status(400)
+      .json({ error: "Both number and password are required." });
+  }
+  try {
+    const candidateFilePath = path.join(__dirname, "candidate.json");
+    let candidateData = {};
+    if (fs.existsSync(candidateFilePath)) {
+      const fileContent = fs.readFileSync(candidateFilePath, "utf8");
+      candidateData = fileContent ? JSON.parse(fileContent) : {};
+    }
+    let foundCandidate = null;
+    for (const pos in candidateData) {
+      if (candidateData.hasOwnProperty(pos)) {
+        const candidates = candidateData[pos];
+        if (candidates[number] && candidates[number].Password === password) {
+          foundCandidate = candidates[number];
+          break;
+        }
+      }
+    }
+    if (foundCandidate) {
+      res.json({
+        message: "Candidate logged in successfully",
+        candidate: stripEmbeddings(foundCandidate),
+      });
+    } else {
+      res.status(401).json({ error: "Invalid credentials" });
+    }
+  } catch (error) {
+    console.error("Error logging in user:", error);
     res
       .status(500)
-      .json({
-        error: "An error occurred while generating the university report.",
+      .json({ error: "An error occurred while logging in the user." });
+  }
+});
+
+userRouter.post("/login_candidate", async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res
+      .status(400)
+      .json({ error: "Both username and password are required." });
+  }
+  try {
+    const candidateFilePath = path.join(__dirname, "candidate.json");
+    let candidateData = {};
+    if (fs.existsSync(candidateFilePath)) {
+      const fileContent = fs.readFileSync(candidateFilePath, "utf8");
+      candidateData = fileContent ? JSON.parse(fileContent) : {};
+    }
+    let foundCandidate = null;
+    for (const pos in candidateData) {
+      if (candidateData.hasOwnProperty(pos)) {
+        const candidates = candidateData[pos];
+        for (const candidateId in candidates) {
+          if (
+            candidates[candidateId].Name === username &&
+            candidates[candidateId].Password === password
+          ) {
+            foundCandidate = candidates[candidateId];
+            break;
+          }
+        }
+        if (foundCandidate) break;
+      }
+    }
+    if (foundCandidate) {
+      res.json({
+        message: "Candidate logged in successfully",
+        candidate: stripEmbeddings(foundCandidate),
       });
+    } else {
+      res.status(401).json({ error: "Invalid credentials" });
+    }
+  } catch (error) {
+    console.error("Error logging in candidate:", error);
+    res
+      .status(500)
+      .json({ error: "An error occurred while logging in the candidate." });
   }
 });
 
