@@ -1,107 +1,145 @@
 {
-  "Data Scientist": {
-    "data_inc": {
-      "username": "data_inc",
-      "Password": "jdDataSecret",
+  "data scientist": {
+    "Recruiter_DS": {
+      "username": "Recruiter_DS",
+      "Password": "recruiterDSPass",
       "Salary": "130000",
-      "job_description": "Seeking an experienced Data Scientist with expertise in Python, machine learning, statistical modeling, and big data analytics. The ideal candidate should have a proven track record in predictive modeling, data visualization, and hands-on experience with large datasets. Experience with tools such as TensorFlow, scikit-learn, and SQL is preferred.",
-      "position": "Data Scientist",
+      "job_description": "Looking for a data scientist with strong skills in machine learning, Python, and data visualization. Must have experience with predictive modeling.",
+      "position": "data scientist",
       "candidates": [
         {
           "ranking": 1,
           "candidateId": "DS001",
-          "Name": "Alice Johnson",
-          "Password": "aliceSecure!",
+          "Name": "Alice Data",
+          "Password": "alicePass",
           "Salary": "120000",
-          "University": "Stanford University",
-          "cv": "Alice Johnson\nSenior Data Scientist with 5+ years of experience in statistical modeling, machine learning, and data visualization. Holds a Master's degree in Data Science from Stanford University. Proficient in Python, R, SQL, TensorFlow, and PyTorch. Previously led predictive analytics projects at Google, developing deep learning models for image recognition and natural language processing.",
-          "position": "Data Scientist",
+          "University": "Tech Institute",
+          "cv": "Alice has a strong background in Python, machine learning, and data analytics. She has worked on predictive models and data visualization projects.",
+          "position": "data scientist",
           "skills": {
-            "text": "Statistical modeling\nMachine learning\nData visualization\nPython\nR\nSQL\nTensorFlow\nPyTorch",
-            "score": "85.00"
+            "text": "Python, machine learning, data analytics",
+            "score": "65.00"
           },
           "education": {
-            "text": "- Master's degree in Data Science from Stanford University",
-            "score": "90.00"
+            "text": "The provided CV does not mention any education details.",
+            "score": "0.00"
           },
           "responsibilities": {
-            "text": "- Led predictive analytics projects\n- Developed deep learning models for image recognition and natural language processing.",
-            "score": "75.00"
+            "text": "- Worked on predictive models\n- Worked on data visualization projects",
+            "score": "45.00"
           },
           "experience": {
-            "text": "- Senior Data Scientist\n- Previously led predictive analytics projects at Google, developing deep learning models for image recognition and natural language processing.",
-            "score": "85.00"
+            "text": "• Worked on predictive models\n• Worked on data visualization projects",
+            "score": "45.00"
           },
-          "ats": "83.75",
-          "overall_similarity": 0.46655522007495165,
+          "ats": "38.75",
+          "overall_similarity": 0.40498764999210835,
           "similarityScores": [
-            0.46655522007495165
+            0.40498764999210835
           ],
-          "currentJobSim": 0.46655522007495165
+          "offers_available": [
+            {
+              "company": "Recruiter_DS",
+              "salary": "130000",
+              "job_description": "Looking for a data scientist with strong skills in machine learning, Python, and data visualization. Must have experience with predictive modeling.",
+              "position": "data scientist"
+            }
+          ],
+          "rejected_from": [],
+          "currentJobSim": 0.40498764999210835
+        }
+      ]
+    }
+  },
+  "full stack developer": {
+    "Recruiter_FS": {
+      "username": "Recruiter_FS",
+      "Password": "recruiterFSPass",
+      "Salary": "125000",
+      "job_description": "Seeking a full stack developer with expertise in JavaScript, React, Node.js, and cloud deployments. Experience with RESTful APIs is a plus.",
+      "position": "full stack developer",
+      "candidates": [
+        {
+          "ranking": 1,
+          "candidateId": "FS001",
+          "Name": "Bob Fullstack",
+          "Password": "bobPass",
+          "Salary": "110000",
+          "University": "Code University",
+          "cv": "Bob is proficient in JavaScript, Node.js, React, and has built several full stack applications. He has experience in cloud deployments.",
+          "position": "full stack developer",
+          "skills": {
+            "text": "JavaScript, Node.js, React",
+            "score": "65.00"
+          },
+          "education": {
+            "text": "The candidate has not provided any education details.",
+            "score": "0.00"
+          },
+          "responsibilities": {
+            "text": "- Built several full stack applications\n- Has experience in cloud deployments",
+            "score": "55.00"
+          },
+          "experience": {
+            "text": "- Built several full stack applications\n- Has experience in cloud deployments",
+            "score": "55.00"
+          },
+          "ats": "43.75",
+          "overall_similarity": 0.40854695439338684,
+          "similarityScores": [
+            0.40854695439338684
+          ],
+          "offers_available": [
+            {
+              "company": "Recruiter_FS",
+              "salary": "125000",
+              "job_description": "Seeking a full stack developer with expertise in JavaScript, React, Node.js, and cloud deployments. Experience with RESTful APIs is a plus.",
+              "position": "full stack developer"
+            }
+          ],
+          "rejected_from": [],
+          "currentJobSim": 0.40854695439338684
         },
         {
           "ranking": 2,
-          "candidateId": "DS002",
-          "Name": "Bob Smith",
-          "Password": "bobPass123",
-          "Salary": "110000",
-          "University": "MIT",
-          "cv": "Bob Smith\nData Scientist with 3 years of industry experience in data analytics and big data technologies. Earned a Bachelor's degree in Computer Science from MIT and a Master's in Data Analytics. Proficient in Python, Apache Spark, Hadoop, and SQL. Demonstrated success in deploying scalable machine learning models at Amazon and IBM, with a strong focus on real-time data processing and model optimization.",
-          "position": "Data Scientist",
+          "candidateId": "DS001",
+          "Name": "Alice Data",
+          "Password": "alicePass",
+          "Salary": "120000",
+          "University": "Tech Institute",
+          "cv": "Alice now has experience in front-end frameworks like React and backend development with Node.js. She has developed responsive web apps.",
+          "position": "full stack developer",
           "skills": {
-            "text": "Python, Apache Spark, Hadoop, and SQL.",
+            "text": "- React\n- Node.js",
             "score": "50.00"
           },
           "education": {
-            "text": "- Bachelor's degree in Computer Science from MIT\n- Master's in Data Analytics",
-            "score": "90.00"
+            "text": "The provided CV does not mention any education details.",
+            "score": "0.00"
           },
           "responsibilities": {
-            "text": "- Deploying scalable machine learning models\n- Real-time data processing\n- Model optimization",
-            "score": "75.00"
+            "text": "- Developed responsive web apps.",
+            "score": "45.00"
           },
           "experience": {
-            "text": "• Data Scientist with 3 years of industry experience in data analytics and big data technologies.\n• Demonstrated success in deploying scalable machine learning models at Amazon and IBM, with a strong focus on real-time data processing and model optimization.",
-            "score": "85.00"
+            "text": "- Experience in front-end frameworks like React\n- Backend development with Node.js\n- Developed responsive web apps",
+            "score": "65.00"
           },
-          "ats": "75.00",
-          "overall_similarity": 0.3939294405281544,
+          "ats": "40.00",
+          "overall_similarity": 0.36108868196606636,
           "similarityScores": [
-            0.3939294405281544
+            0.36108868196606636
           ],
-          "currentJobSim": 0.3939294405281544
-        },
-        {
-          "ranking": 3,
-          "candidateId": "DS003",
-          "Name": "Carol Lee",
-          "Password": "carolData@2025",
-          "Salary": "125000",
-          "University": "UC Berkeley",
-          "cv": "Carol Lee\nData Scientist with a robust background in statistical analysis, predictive modeling, and algorithm development. Holds a Ph.D. in Statistics from UC Berkeley. Expert in Python, R, SQL, and machine learning libraries including scikit-learn, Keras, and Pandas. Experienced in leading research projects and implementing innovative data solutions at leading tech startups and research institutes.",
-          "position": "Data Scientist",
-          "skills": {
-            "text": "•Statistical analysis\n•Predictive modeling\n•Algorithm development\n•Python\n•R\n•SQL\n•scikit-learn\n•Keras\n•Pandas",
-            "score": "85.00"
-          },
-          "education": {
-            "text": "Ph.D. in Statistics from UC Berkeley",
-            "score": "90.00"
-          },
-          "responsibilities": {
-            "text": "- Leading research projects\n- Implementing innovative data solutions",
-            "score": "55.00"
-          },
-          "experience": {
-            "text": "• Experienced in leading research projects and implementing innovative data solutions at leading tech startups and research institutes.",
-            "score": "55.00"
-          },
-          "ats": "71.25",
-          "overall_similarity": 0.3805676978081465,
-          "similarityScores": [
-            0.3805676978081465
+          "offers_available": [
+            {
+              "company": "Recruiter_FS",
+              "salary": "125000",
+              "job_description": "Seeking a full stack developer with expertise in JavaScript, React, Node.js, and cloud deployments. Experience with RESTful APIs is a plus.",
+              "position": "full stack developer"
+            }
           ],
-          "currentJobSim": 0.3805676978081465
+          "rejected_from": [],
+          "currentJobSim": 0.36108868196606636
         }
       ]
     }

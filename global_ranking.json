@@ -1,7 +1,9 @@
 {
-  "Data Scientist": {
-    "DS001": 1,
-    "DS002": 2,
-    "DS003": 3
+  "data scientist": {
+    "DS001": 1
+  },
+  "full stack developer": {
+    "FS001": 1,
+    "DS001": 2
   }
 }

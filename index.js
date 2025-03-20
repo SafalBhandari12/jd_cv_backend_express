@@ -53,7 +53,7 @@ const userRouter = express.Router();
 // Candidate and Job Description Endpoints
 // ---------------------------------------------
 
-// Register Candidate with category scores
+// Register Candidate with full processing (initial registration)
 userRouter.post("/register_candidate", async (req, res) => {
   const { number, name, university, cv, position, password, salary } = req.body;
   if (
@@ -174,27 +174,56 @@ userRouter.post("/register_candidate", async (req, res) => {
   }
 });
 
-// Add Candidate CV for an additional position
+// Modified Endpoint: Add Candidate CV for an Additional Position (Authenticated)
+// New CV is processed exactly like registration (i.e. text extraction, embeddings, and score calculation)
 userRouter.post("/add_candidate_cv", async (req, res) => {
-  const { number, name, university, cv, position, password, salary } = req.body;
-  if (
-    !number ||
-    !name ||
-    !university ||
-    !cv ||
-    !position ||
-    !password ||
-    !salary
-  ) {
+  // Candidate must provide their number, password, new cv text, and new position
+  const { number, password, cv, position } = req.body;
+  if (!number || !password || !cv || !position) {
     return res.status(400).json({
-      error:
-        "All fields (number, name, university, cv, position, password, salary) are required.",
+      error: "Fields number, password, cv, and position are required.",
     });
   }
   if (typeof position !== "string") {
     return res.status(400).json({ error: "Position must be a string." });
   }
+
   try {
+    const candidateFilePath = path.join(__dirname, "candidate.json");
+    let candidateData = {};
+    if (fs.existsSync(candidateFilePath)) {
+      const fileContent = fs.readFileSync(candidateFilePath, "utf8");
+      candidateData = fileContent ? JSON.parse(fileContent) : {};
+    }
+
+    // Authenticate the candidate by searching for matching number and password in any position
+    let registeredCandidate = null;
+    for (const pos in candidateData) {
+      if (
+        candidateData[pos][number] &&
+        candidateData[pos][number].Password === password
+      ) {
+        registeredCandidate = candidateData[pos][number];
+        break;
+      }
+    }
+    if (!registeredCandidate) {
+      return res
+        .status(401)
+        .json({ error: "Candidate not registered or invalid credentials." });
+    }
+
+    // Check if candidate has already applied for the new position
+    if (candidateData[position] && candidateData[position][number]) {
+      return res
+        .status(400)
+        .json({ error: "Candidate has already applied for this position." });
+    }
+
+    // Use the candidate's registered details for name, university, and salary
+    const { Name, University, Salary } = registeredCandidate;
+
+    // Process the new CV: extract texts, get embeddings, and calculate category scores
     const skillsText = await queryCV(cvQuestions.skills, cv, "cv");
     const educationText = await queryCV(cvQuestions.education, cv, "cv");
     const responsibilitiesText = await queryCV(
@@ -209,20 +238,50 @@ userRouter.post("/add_candidate_cv", async (req, res) => {
     const responsibilitiesEmbedding = await getEmbedding(responsibilitiesText);
     const experienceEmbedding = await getEmbedding(experienceText);
 
+    const skillsScore = await getCategoryScore("skills", skillsText, position);
+    const educationScore = await getCategoryScore(
+      "education",
+      educationText,
+      position
+    );
+    const responsibilitiesScore = await getCategoryScore(
+      "responsibilities",
+      responsibilitiesText,
+      position
+    );
+    const experienceScore = await getCategoryScore(
+      "experience",
+      experienceText,
+      position
+    );
+
     let candidateDetails = {
-      Name: name,
+      Name,
       Password: password,
-      Salary: salary,
-      University: university,
+      Salary,
+      University,
       cv,
       position,
-      skills: { text: skillsText, embedding: skillsEmbedding },
-      education: { text: educationText, embedding: educationEmbedding },
+      skills: {
+        text: skillsText,
+        embedding: skillsEmbedding,
+        score: skillsScore,
+      },
+      education: {
+        text: educationText,
+        embedding: educationEmbedding,
+        score: educationScore,
+      },
       responsibilities: {
         text: responsibilitiesText,
         embedding: responsibilitiesEmbedding,
+        score: responsibilitiesScore,
       },
-      experience: { text: experienceText, embedding: experienceEmbedding },
+      experience: {
+        text: experienceText,
+        embedding: experienceEmbedding,
+        score: experienceScore,
+      },
       ats: "0",
       overall_similarity: 0,
       similarityScores: [],
@@ -231,12 +290,7 @@ userRouter.post("/add_candidate_cv", async (req, res) => {
     };
     candidateDetails.ats = calculateAtsScore(candidateDetails);
 
-    const candidateFilePath = path.join(__dirname, "candidate.json");
-    let candidateData = {};
-    if (fs.existsSync(candidateFilePath)) {
-      const fileContent = fs.readFileSync(candidateFilePath, "utf8");
-      candidateData = fileContent ? JSON.parse(fileContent) : {};
-    }
+    // Save new candidate record under the new position
     if (!candidateData[position]) {
       candidateData[position] = {};
     }
@@ -293,6 +347,7 @@ userRouter.post("/register_jd", async (req, res) => {
   }
   const topCandidatesNumber = parseInt(topCandidates);
   try {
+    // Process job description by extracting texts and embeddings for JD fields
     const jdSkills = await queryCV(jdQuestions.skills, job_description, "jd");
     const jdEducation = await queryCV(
       jdQuestions.education,
@@ -327,30 +382,29 @@ userRouter.post("/register_jd", async (req, res) => {
     for (const candId in candidatesForPosition) {
       const candidate = candidatesForPosition[candId];
 
-      // Only compute similarity if the candidate's category score is not 0.
       const simSkills =
-        parseFloat(candidate.skills.score) === 0
+        parseFloat(candidate.skills.score || 0) === 0
           ? 0
           : await computeCosineSimilarity(
               candidate.skills.embedding,
               jdSkillsEmbedding
             );
       const simEducation =
-        parseFloat(candidate.education.score) === 0
+        parseFloat(candidate.education.score || 0) === 0
           ? 0
           : await computeCosineSimilarity(
               candidate.education.embedding,
               jdEducationEmbedding
             );
       const simResponsibilities =
-        parseFloat(candidate.responsibilities.score) === 0
+        parseFloat(candidate.responsibilities.score || 0) === 0
           ? 0
           : await computeCosineSimilarity(
               candidate.responsibilities.embedding,
               jdResponsibilitiesEmbedding
             );
       const simExperience =
-        parseFloat(candidate.experience.score) === 0
+        parseFloat(candidate.experience.score || 0) === 0
           ? 0
           : await computeCosineSimilarity(
               candidate.experience.embedding,
@@ -371,7 +425,6 @@ userRouter.post("/register_jd", async (req, res) => {
         ...stripEmbeddings(candidate),
         currentJobSim: currentSim,
       };
-
       candidateRankings.push(candidateRankingObj);
     }
 
@@ -383,24 +436,12 @@ userRouter.post("/register_jd", async (req, res) => {
       ...cand,
     }));
 
-    // Update candidate and global ranking files
-    for (const candObj of candidateRankings) {
-      if (
-        candidateData[position] &&
-        candidateData[position][candObj.candidateId]
-      ) {
-        candidateData[position][candObj.candidateId].overall_similarity =
-          candObj.overall_similarity;
-      }
-    }
-
-    // Determine top candidate IDs and update their offers/rejections
+    // ***** Update candidate offers and rejections *****
     const topCandidateIds = new Set(
       candidateRankings
         .slice(0, topCandidatesNumber)
         .map((cand) => cand.candidateId)
     );
-    // Company details to add. Modify as needed.
     const companyDetails = {
       company: username,
       salary,
@@ -410,26 +451,27 @@ userRouter.post("/register_jd", async (req, res) => {
 
     for (const candId in candidatesForPosition) {
       if (topCandidateIds.has(candId)) {
-        // For selected candidates add/update offers_available
         if (!candidateData[position][candId].offers_available) {
           candidateData[position][candId].offers_available = [];
         }
         candidateData[position][candId].offers_available.push(companyDetails);
       } else {
-        // For others, add/update rejected_from
         if (!candidateData[position][candId].rejected_from) {
           candidateData[position][candId].rejected_from = [];
         }
         candidateData[position][candId].rejected_from.push(companyDetails);
       }
     }
+    // ***************************************************
 
+    // Update candidate file after modifying offers/rejections
     fs.writeFileSync(
       candidateFilePath,
       JSON.stringify(candidateData, null, 2),
       "utf8"
     );
 
+    // Update global ranking file
     const globalRankingPath = path.join(__dirname, "global_ranking.json");
     let globalRanking = {};
     if (fs.existsSync(globalRankingPath)) {
@@ -450,6 +492,7 @@ userRouter.post("/register_jd", async (req, res) => {
       "utf8"
     );
 
+    // Save job description details
     const jdFilePath = path.join(__dirname, "job_description.json");
     let jobDescData = {};
     if (fs.existsSync(jdFilePath)) {
@@ -489,8 +532,8 @@ userRouter.post("/register_jd", async (req, res) => {
   }
 });
 
-// Add Job Description for an additional position with topCandidates parameter and include global ranking in response
-userRouter.post("/add_job_description", async (req, res) => {
+// Modified Endpoint: Add Job Description for an Additional Position (Authenticated Recruiter)
+userRouter.post("/add_job_description_cv", async (req, res) => {
   const {
     username,
     password,
@@ -521,7 +564,34 @@ userRouter.post("/add_job_description", async (req, res) => {
       .json({ error: "topCandidates must be a positive number." });
   }
   const topCandidatesNumber = parseInt(topCandidates);
+
   try {
+    // Authenticate recruiter by checking job_description.json for an existing record
+    const jdFilePath = path.join(__dirname, "job_description.json");
+    let jobDescData = {};
+    if (fs.existsSync(jdFilePath)) {
+      const fileContent = fs.readFileSync(jdFilePath, "utf8");
+      jobDescData = fileContent ? JSON.parse(fileContent) : {};
+    }
+    let recruiterFound = false;
+    for (const pos in jobDescData) {
+      for (const rec in jobDescData[pos]) {
+        if (
+          jobDescData[pos][rec].username === username &&
+          jobDescData[pos][rec].Password === password
+        ) {
+          recruiterFound = true;
+          break;
+        }
+      }
+      if (recruiterFound) break;
+    }
+    if (!recruiterFound) {
+      return res
+        .status(401)
+        .json({ error: "Recruiter not registered or invalid credentials." });
+    }
+
     const jdSkills = await queryCV(jdQuestions.skills, job_description, "jd");
     const jdEducation = await queryCV(
       jdQuestions.education,
@@ -557,28 +627,28 @@ userRouter.post("/add_job_description", async (req, res) => {
       const candidate = candidatesForPosition[candId];
 
       const simSkills =
-        parseFloat(candidate.skills.score) === 0
+        parseFloat(candidate.skills.score || 0) === 0
           ? 0
           : await computeCosineSimilarity(
               candidate.skills.embedding,
               jdSkillsEmbedding
             );
       const simEducation =
-        parseFloat(candidate.education.score) === 0
+        parseFloat(candidate.education.score || 0) === 0
           ? 0
           : await computeCosineSimilarity(
               candidate.education.embedding,
               jdEducationEmbedding
             );
       const simResponsibilities =
-        parseFloat(candidate.responsibilities.score) === 0
+        parseFloat(candidate.responsibilities.score || 0) === 0
           ? 0
           : await computeCosineSimilarity(
               candidate.responsibilities.embedding,
               jdResponsibilitiesEmbedding
             );
       const simExperience =
-        parseFloat(candidate.experience.score) === 0
+        parseFloat(candidate.experience.score || 0) === 0
           ? 0
           : await computeCosineSimilarity(
               candidate.experience.embedding,
@@ -610,15 +680,34 @@ userRouter.post("/add_job_description", async (req, res) => {
       ...cand,
     }));
 
-    for (const candObj of candidateRankings) {
-      if (
-        candidateData[position] &&
-        candidateData[position][candObj.candidateId]
-      ) {
-        candidateData[position][candObj.candidateId].overall_similarity =
-          candObj.overall_similarity;
+    // ***** Update candidate offers and rejections *****
+    const topCandidateIds = new Set(
+      candidateRankings
+        .slice(0, topCandidatesNumber)
+        .map((cand) => cand.candidateId)
+    );
+    const companyDetails = {
+      company: username,
+      salary,
+      job_description,
+      position,
+    };
+
+    for (const candId in candidatesForPosition) {
+      if (topCandidateIds.has(candId)) {
+        if (!candidateData[position][candId].offers_available) {
+          candidateData[position][candId].offers_available = [];
+        }
+        candidateData[position][candId].offers_available.push(companyDetails);
+      } else {
+        if (!candidateData[position][candId].rejected_from) {
+          candidateData[position][candId].rejected_from = [];
+        }
+        candidateData[position][candId].rejected_from.push(companyDetails);
       }
     }
+    // ***************************************************
+
     fs.writeFileSync(
       candidateFilePath,
       JSON.stringify(candidateData, null, 2),
@@ -645,12 +734,6 @@ userRouter.post("/add_job_description", async (req, res) => {
       "utf8"
     );
 
-    const jdFilePath = path.join(__dirname, "job_description.json");
-    let jobDescData = {};
-    if (fs.existsSync(jdFilePath)) {
-      const fileContent = fs.readFileSync(jdFilePath, "utf8");
-      jobDescData = fileContent ? JSON.parse(fileContent) : {};
-    }
     if (!jobDescData[position]) {
       jobDescData[position] = {};
     }
@@ -746,7 +829,6 @@ userRouter.post("/login_candidate", async (req, res) => {
       .json({ error: "Both number and password are required." });
   }
   try {
-    // Read candidate data
     const candidateFilePath = path.join(__dirname, "candidate.json");
     let candidateData = {};
     if (fs.existsSync(candidateFilePath)) {
@@ -754,7 +836,6 @@ userRouter.post("/login_candidate", async (req, res) => {
       candidateData = fileContent ? JSON.parse(fileContent) : {};
     }
 
-    // Read global ranking data
     const globalRankingPath = path.join(__dirname, "global_ranking.json");
     let globalRanking = {};
     if (fs.existsSync(globalRankingPath)) {
@@ -767,7 +848,6 @@ userRouter.post("/login_candidate", async (req, res) => {
       if (candidateData.hasOwnProperty(pos)) {
         const candidate = candidateData[pos][number];
         if (candidate && candidate.Password === password) {
-          // Get overall ranking if available; if not, use "Not Ranked"
           const overall_rank =
             (globalRanking[pos] && globalRanking[pos][number]) || "Not Ranked";
           foundCandidates.push({
@@ -795,7 +875,7 @@ userRouter.post("/login_candidate", async (req, res) => {
   }
 });
 
-// New Recruiter Login Endpoint: login_jd
+// Recruiter (Job Description) Login Endpoint: login_jd
 userRouter.post("/login_jd", async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
@@ -811,7 +891,6 @@ userRouter.post("/login_jd", async (req, res) => {
       jobDescData = fileContent ? JSON.parse(fileContent) : {};
     }
     let foundJobDescriptions = [];
-    // Iterate through each position and its job postings
     for (const pos in jobDescData) {
       for (const recruiter in jobDescData[pos]) {
         const jobPost = jobDescData[pos][recruiter];
