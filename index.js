@@ -260,7 +260,7 @@ userRouter.post("/add_candidate_cv", async (req, res) => {
   }
 });
 
-// Register Job Description with topCandidates parameter
+// Register Job Description with topCandidates parameter and include global ranking in response
 userRouter.post("/register_jd", async (req, res) => {
   const {
     username,
@@ -465,7 +465,7 @@ userRouter.post("/register_jd", async (req, res) => {
       Salary: salary,
       job_description,
       position,
-      candidates: candidateRankings,
+      candidates: candidateRankings.slice(0, topCandidatesNumber),
     };
     fs.writeFileSync(jdFilePath, JSON.stringify(jobDescData, null, 2), "utf8");
 
@@ -478,6 +478,7 @@ userRouter.post("/register_jd", async (req, res) => {
         job_description,
         position,
         candidates: candidateRankings.slice(0, topCandidatesNumber),
+        globalRanking: globalRanking[position],
       },
     });
   } catch (error) {
@@ -488,18 +489,38 @@ userRouter.post("/register_jd", async (req, res) => {
   }
 });
 
-// Add Job Description for an additional position
+// Add Job Description for an additional position with topCandidates parameter and include global ranking in response
 userRouter.post("/add_job_description", async (req, res) => {
-  const { username, password, salary, job_description, position } = req.body;
-  if (!username || !password || !salary || !job_description || !position) {
+  const {
+    username,
+    password,
+    salary,
+    job_description,
+    position,
+    topCandidates,
+  } = req.body;
+  if (
+    !username ||
+    !password ||
+    !salary ||
+    !job_description ||
+    !position ||
+    !topCandidates
+  ) {
     return res.status(400).json({
       error:
-        "All fields (username, password, salary, job_description, position) are required.",
+        "All fields (username, password, salary, job_description, position, topCandidates) are required.",
     });
   }
   if (typeof position !== "string") {
     return res.status(400).json({ error: "Position must be a string." });
   }
+  if (isNaN(topCandidates) || parseInt(topCandidates) <= 0) {
+    return res
+      .status(400)
+      .json({ error: "topCandidates must be a positive number." });
+  }
+  const topCandidatesNumber = parseInt(topCandidates);
   try {
     const jdSkills = await queryCV(jdQuestions.skills, job_description, "jd");
     const jdEducation = await queryCV(
@@ -639,7 +660,7 @@ userRouter.post("/add_job_description", async (req, res) => {
       Salary: salary,
       job_description,
       position,
-      candidates: candidateRankings,
+      candidates: candidateRankings.slice(0, topCandidatesNumber),
     };
     fs.writeFileSync(jdFilePath, JSON.stringify(jobDescData, null, 2), "utf8");
 
@@ -651,7 +672,8 @@ userRouter.post("/add_job_description", async (req, res) => {
         Salary: salary,
         job_description,
         position,
-        candidates: candidateRankings,
+        candidates: candidateRankings.slice(0, topCandidatesNumber),
+        globalRanking: globalRanking[position],
       },
     });
   } catch (error) {
