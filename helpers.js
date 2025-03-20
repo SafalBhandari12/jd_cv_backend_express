@@ -1,4 +1,3 @@
-// helpers.js
 const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
@@ -190,8 +189,8 @@ async function getCategoryScore(category, categoryText, position, attempt = 1) {
   }
 }
 
-// Remove embedding arrays from candidate objects for response
-// Now, in addition to stripping embeddings, we pass along offers and rejections.
+// Remove only embedding arrays from candidate objects for response.
+// Everything else is sent.
 function stripEmbeddings(candidateObj) {
   return {
     Name: candidateObj.Name,
@@ -224,8 +223,10 @@ function stripEmbeddings(candidateObj) {
     ats: candidateObj.ats,
     overall_similarity: candidateObj.overall_similarity,
     similarityScores: candidateObj.similarityScores,
-    offers_available: candidateObj.offers_available, // now included
-    rejected_from: candidateObj.rejected_from, // now included
+    offers_available: candidateObj.offers_available,
+    rejected_from: candidateObj.rejected_from,
+    notifications: candidateObj.notifications,
+    new_notification: candidateObj.new_notification,
   };
 }
 

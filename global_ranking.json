@@ -1,9 +1,6 @@
 {
-  "data scientist": {
-    "DS001": 1
-  },
-  "full stack developer": {
-    "FS001": 1,
-    "DS001": 2
+  "Data Scientist": {
+    "123456": 1,
+    "789012": 2
   }
 }
