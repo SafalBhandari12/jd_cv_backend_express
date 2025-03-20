@@ -1,4 +1,4 @@
-// server.js
+// index.js
 const express = require("express");
 const axios = require("axios");
 const fs = require("fs");
@@ -31,7 +31,7 @@ const cvQuestions = {
   education:
     "Based solely on the provided CV, extract and list the candidate's education details exactly as stated. Do not hypothesize or add extra details.",
   responsibilities:
-    "Based solely on the provided CV, extract and list the responsibilities the candidate has handled or can handle based on past experience. Do not add any responsibilities that are not explicitly mentioned.",
+    "Based solely on the provided CV, extract and list the responsibilities the candidate has handled in the past. Do not add any responsibilities that are not explicitly mentioned.",
   experience:
     "Based solely on the provided CV, extract and list the candidate's work experience exactly as presented. Do not infer or add any extra information.",
 };
@@ -139,6 +139,8 @@ userRouter.post("/register_candidate", async (req, res) => {
       ats: "0",
       overall_similarity: 0,
       similarityScores: [],
+      offers_available: [],
+      rejected_from: [],
     };
 
     candidateDetails.ats = calculateAtsScore(candidateDetails);
@@ -224,6 +226,8 @@ userRouter.post("/add_candidate_cv", async (req, res) => {
       ats: "0",
       overall_similarity: 0,
       similarityScores: [],
+      offers_available: [],
+      rejected_from: [],
     };
     candidateDetails.ats = calculateAtsScore(candidateDetails);
 
@@ -256,18 +260,38 @@ userRouter.post("/add_candidate_cv", async (req, res) => {
   }
 });
 
-// Register Job Description
+// Register Job Description with topCandidates parameter
 userRouter.post("/register_jd", async (req, res) => {
-  const { username, password, salary, job_description, position } = req.body;
-  if (!username || !password || !salary || !job_description || !position) {
+  const {
+    username,
+    password,
+    salary,
+    job_description,
+    position,
+    topCandidates,
+  } = req.body;
+  if (
+    !username ||
+    !password ||
+    !salary ||
+    !job_description ||
+    !position ||
+    !topCandidates
+  ) {
     return res.status(400).json({
       error:
-        "All fields (username, password, salary, job_description, position) are required.",
+        "All fields (username, password, salary, job_description, position, topCandidates) are required.",
     });
   }
   if (typeof position !== "string") {
     return res.status(400).json({ error: "Position must be a string." });
   }
+  if (isNaN(topCandidates) || parseInt(topCandidates) <= 0) {
+    return res
+      .status(400)
+      .json({ error: "topCandidates must be a positive number." });
+  }
+  const topCandidatesNumber = parseInt(topCandidates);
   try {
     const jdSkills = await queryCV(jdQuestions.skills, job_description, "jd");
     const jdEducation = await queryCV(
@@ -369,6 +393,37 @@ userRouter.post("/register_jd", async (req, res) => {
           candObj.overall_similarity;
       }
     }
+
+    // Determine top candidate IDs and update their offers/rejections
+    const topCandidateIds = new Set(
+      candidateRankings
+        .slice(0, topCandidatesNumber)
+        .map((cand) => cand.candidateId)
+    );
+    // Company details to add. Modify as needed.
+    const companyDetails = {
+      company: username,
+      salary,
+      job_description,
+      position,
+    };
+
+    for (const candId in candidatesForPosition) {
+      if (topCandidateIds.has(candId)) {
+        // For selected candidates add/update offers_available
+        if (!candidateData[position][candId].offers_available) {
+          candidateData[position][candId].offers_available = [];
+        }
+        candidateData[position][candId].offers_available.push(companyDetails);
+      } else {
+        // For others, add/update rejected_from
+        if (!candidateData[position][candId].rejected_from) {
+          candidateData[position][candId].rejected_from = [];
+        }
+        candidateData[position][candId].rejected_from.push(companyDetails);
+      }
+    }
+
     fs.writeFileSync(
       candidateFilePath,
       JSON.stringify(candidateData, null, 2),
@@ -422,7 +477,7 @@ userRouter.post("/register_jd", async (req, res) => {
         Salary: salary,
         job_description,
         position,
-        candidates: candidateRankings,
+        candidates: candidateRankings.slice(0, topCandidatesNumber),
       },
     });
   } catch (error) {
@@ -660,10 +715,8 @@ userRouter.post("/uni_report", async (req, res) => {
   }
 });
 
-// Modified Login Endpoints: Fetch candidate data from all positions if available
-
-// Login using candidate number
-userRouter.post("/login_user", async (req, res) => {
+// Candidate login using number and password
+userRouter.post("/login_candidate", async (req, res) => {
   const { number, password } = req.body;
   if (!number || !password) {
     return res
@@ -671,70 +724,36 @@ userRouter.post("/login_user", async (req, res) => {
       .json({ error: "Both number and password are required." });
   }
   try {
+    // Read candidate data
     const candidateFilePath = path.join(__dirname, "candidate.json");
     let candidateData = {};
     if (fs.existsSync(candidateFilePath)) {
       const fileContent = fs.readFileSync(candidateFilePath, "utf8");
       candidateData = fileContent ? JSON.parse(fileContent) : {};
     }
+
+    // Read global ranking data
+    const globalRankingPath = path.join(__dirname, "global_ranking.json");
+    let globalRanking = {};
+    if (fs.existsSync(globalRankingPath)) {
+      const rankingContent = fs.readFileSync(globalRankingPath, "utf8");
+      globalRanking = rankingContent ? JSON.parse(rankingContent) : {};
+    }
+
     let foundCandidates = [];
     for (const pos in candidateData) {
       if (candidateData.hasOwnProperty(pos)) {
-        const candidates = candidateData[pos];
-        if (candidates[number] && candidates[number].Password === password) {
+        const candidate = candidateData[pos][number];
+        if (candidate && candidate.Password === password) {
+          // Get overall ranking if available; if not, use "Not Ranked"
+          const overall_rank =
+            (globalRanking[pos] && globalRanking[pos][number]) || "Not Ranked";
           foundCandidates.push({
             position: pos,
-            ...stripEmbeddings(candidates[number]),
+            candidateId: number,
+            overall_rank,
+            ...stripEmbeddings(candidate),
           });
-        }
-      }
-    }
-    if (foundCandidates.length > 0) {
-      res.json({
-        message: "Candidate logged in successfully",
-        candidates: foundCandidates,
-      });
-    } else {
-      res.status(401).json({ error: "Invalid credentials" });
-    }
-  } catch (error) {
-    console.error("Error logging in user:", error);
-    res
-      .status(500)
-      .json({ error: "An error occurred while logging in the user." });
-  }
-});
-
-// Login using candidate name
-userRouter.post("/login_candidate", async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res
-      .status(400)
-      .json({ error: "Both username and password are required." });
-  }
-  try {
-    const candidateFilePath = path.join(__dirname, "candidate.json");
-    let candidateData = {};
-    if (fs.existsSync(candidateFilePath)) {
-      const fileContent = fs.readFileSync(candidateFilePath, "utf8");
-      candidateData = fileContent ? JSON.parse(fileContent) : {};
-    }
-    let foundCandidates = [];
-    for (const pos in candidateData) {
-      if (candidateData.hasOwnProperty(pos)) {
-        const candidates = candidateData[pos];
-        for (const candidateId in candidates) {
-          if (
-            candidates[candidateId].Name === username &&
-            candidates[candidateId].Password === password
-          ) {
-            foundCandidates.push({
-              position: pos,
-              candidateId,
-              ...stripEmbeddings(candidates[candidateId]),
-            });
-          }
         }
       }
     }
@@ -751,6 +770,47 @@ userRouter.post("/login_candidate", async (req, res) => {
     res
       .status(500)
       .json({ error: "An error occurred while logging in the candidate." });
+  }
+});
+
+// New Recruiter Login Endpoint: login_jd
+userRouter.post("/login_jd", async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res
+      .status(400)
+      .json({ error: "Both username and password are required." });
+  }
+  try {
+    const jdFilePath = path.join(__dirname, "job_description.json");
+    let jobDescData = {};
+    if (fs.existsSync(jdFilePath)) {
+      const fileContent = fs.readFileSync(jdFilePath, "utf8");
+      jobDescData = fileContent ? JSON.parse(fileContent) : {};
+    }
+    let foundJobDescriptions = [];
+    // Iterate through each position and its job postings
+    for (const pos in jobDescData) {
+      for (const recruiter in jobDescData[pos]) {
+        const jobPost = jobDescData[pos][recruiter];
+        if (jobPost.username === username && jobPost.Password === password) {
+          foundJobDescriptions.push(jobPost);
+        }
+      }
+    }
+    if (foundJobDescriptions.length > 0) {
+      res.json({
+        message: "Recruiter logged in successfully",
+        job_postings: foundJobDescriptions,
+      });
+    } else {
+      res.status(401).json({ error: "Invalid credentials" });
+    }
+  } catch (error) {
+    console.error("Error logging in recruiter:", error);
+    res
+      .status(500)
+      .json({ error: "An error occurred while logging in the recruiter." });
   }
 });
 

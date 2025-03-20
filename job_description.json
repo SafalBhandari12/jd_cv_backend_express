@@ -1,67 +1,107 @@
 {
-  "data scientist": {
-    "recruiter_ds": {
-      "username": "recruiter_ds",
-      "Password": "recruiterPassDS",
-      "Salary": "120000",
-      "job_description": "Looking for a data scientist with strong Python skills, experience in machine learning, and expertise in data visualization.",
-      "position": "data scientist",
+  "Data Scientist": {
+    "data_inc": {
+      "username": "data_inc",
+      "Password": "jdDataSecret",
+      "Salary": "130000",
+      "job_description": "Seeking an experienced Data Scientist with expertise in Python, machine learning, statistical modeling, and big data analytics. The ideal candidate should have a proven track record in predictive modeling, data visualization, and hands-on experience with large datasets. Experience with tools such as TensorFlow, scikit-learn, and SQL is preferred.",
+      "position": "Data Scientist",
       "candidates": [
         {
           "ranking": 1,
           "candidateId": "DS001",
           "Name": "Alice Johnson",
-          "Password": "alicePass123",
+          "Password": "aliceSecure!",
           "Salary": "120000",
-          "University": "MIT",
-          "cv": "Experienced in Python, R, machine learning, and data analysis.",
-          "position": "data scientist",
+          "University": "Stanford University",
+          "cv": "Alice Johnson\nSenior Data Scientist with 5+ years of experience in statistical modeling, machine learning, and data visualization. Holds a Master's degree in Data Science from Stanford University. Proficient in Python, R, SQL, TensorFlow, and PyTorch. Previously led predictive analytics projects at Google, developing deep learning models for image recognition and natural language processing.",
+          "position": "Data Scientist",
           "skills": {
-            "text": "Python, R, machine learning, data analysis."
+            "text": "Statistical modeling\nMachine learning\nData visualization\nPython\nR\nSQL\nTensorFlow\nPyTorch",
+            "score": "85.00"
           },
           "education": {
-            "text": "The text does not provide any information about the person's education."
+            "text": "- Master's degree in Data Science from Stanford University",
+            "score": "90.00"
           },
           "responsibilities": {
-            "text": "Data analysis, machine learning model development, statistical analysis using R, and scripting or automation tasks using Python."
+            "text": "- Led predictive analytics projects\n- Developed deep learning models for image recognition and natural language processing.",
+            "score": "75.00"
           },
           "experience": {
-            "text": "Python, R, machine learning, data analysis."
+            "text": "- Senior Data Scientist\n- Previously led predictive analytics projects at Google, developing deep learning models for image recognition and natural language processing.",
+            "score": "85.00"
           },
-          "ats": "4.30",
-          "overall_similarity": 0.6472700759768486,
+          "ats": "83.75",
+          "overall_similarity": 0.46655522007495165,
           "similarityScores": [
-            0.6472700759768486
+            0.46655522007495165
           ],
-          "currentJobSim": 0.6472700759768486
+          "currentJobSim": 0.46655522007495165
         },
         {
           "ranking": 2,
           "candidateId": "DS002",
-          "Name": "Carol Lee",
-          "Password": "carolData",
-          "Salary": "125000",
-          "University": "Harvard",
-          "cv": "Skilled in data mining, Python programming, and statistical modeling.",
-          "position": "data scientist",
+          "Name": "Bob Smith",
+          "Password": "bobPass123",
+          "Salary": "110000",
+          "University": "MIT",
+          "cv": "Bob Smith\nData Scientist with 3 years of industry experience in data analytics and big data technologies. Earned a Bachelor's degree in Computer Science from MIT and a Master's in Data Analytics. Proficient in Python, Apache Spark, Hadoop, and SQL. Demonstrated success in deploying scalable machine learning models at Amazon and IBM, with a strong focus on real-time data processing and model optimization.",
+          "position": "Data Scientist",
           "skills": {
-            "text": "Data mining, Python programming, statistical modeling."
+            "text": "Python, Apache Spark, Hadoop, and SQL.",
+            "score": "50.00"
           },
           "education": {
-            "text": "The text does not provide any information about the person's education."
+            "text": "- Bachelor's degree in Computer Science from MIT\n- Master's in Data Analytics",
+            "score": "90.00"
           },
           "responsibilities": {
-            "text": "Data analysis, predictive modeling, machine learning tasks, scripting and automation using Python, statistical analysis, and interpreting complex data sets."
+            "text": "- Deploying scalable machine learning models\n- Real-time data processing\n- Model optimization",
+            "score": "75.00"
           },
           "experience": {
-            "text": "Data mining, Python programming, statistical modeling."
+            "text": "• Data Scientist with 3 years of industry experience in data analytics and big data technologies.\n• Demonstrated success in deploying scalable machine learning models at Amazon and IBM, with a strong focus on real-time data processing and model optimization.",
+            "score": "85.00"
           },
-          "ats": "5.40",
-          "overall_similarity": 0.6363494172692299,
+          "ats": "75.00",
+          "overall_similarity": 0.3939294405281544,
           "similarityScores": [
-            0.6363494172692299
+            0.3939294405281544
           ],
-          "currentJobSim": 0.6363494172692299
+          "currentJobSim": 0.3939294405281544
+        },
+        {
+          "ranking": 3,
+          "candidateId": "DS003",
+          "Name": "Carol Lee",
+          "Password": "carolData@2025",
+          "Salary": "125000",
+          "University": "UC Berkeley",
+          "cv": "Carol Lee\nData Scientist with a robust background in statistical analysis, predictive modeling, and algorithm development. Holds a Ph.D. in Statistics from UC Berkeley. Expert in Python, R, SQL, and machine learning libraries including scikit-learn, Keras, and Pandas. Experienced in leading research projects and implementing innovative data solutions at leading tech startups and research institutes.",
+          "position": "Data Scientist",
+          "skills": {
+            "text": "•Statistical analysis\n•Predictive modeling\n•Algorithm development\n•Python\n•R\n•SQL\n•scikit-learn\n•Keras\n•Pandas",
+            "score": "85.00"
+          },
+          "education": {
+            "text": "Ph.D. in Statistics from UC Berkeley",
+            "score": "90.00"
+          },
+          "responsibilities": {
+            "text": "- Leading research projects\n- Implementing innovative data solutions",
+            "score": "55.00"
+          },
+          "experience": {
+            "text": "• Experienced in leading research projects and implementing innovative data solutions at leading tech startups and research institutes.",
+            "score": "55.00"
+          },
+          "ats": "71.25",
+          "overall_similarity": 0.3805676978081465,
+          "similarityScores": [
+            0.3805676978081465
+          ],
+          "currentJobSim": 0.3805676978081465
         }
       ]
     }
