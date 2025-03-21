@@ -4,10 +4,14 @@ const path = require("path");
 const http = require("http");
 require("dotenv").config();
 
+const cors = require("cors"); // Import CORS package
 const userRouter = require("./routes/user");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Middleware to allow all CORS requests
+app.use(cors());
 
 // Middleware to parse JSON bodies
 app.use(express.json());
