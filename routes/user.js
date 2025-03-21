@@ -39,6 +39,40 @@ const jdQuestions = {
 };
 
 // ---------------------------------------------
+// Helper function to update global ranking
+// ---------------------------------------------
+function updateGlobalRanking(position, candidateData) {
+  const globalRankingPath = path.join(__dirname, "../global_ranking.json");
+  let globalRanking = {};
+  if (fs.existsSync(globalRankingPath)) {
+    const fileContent = fs.readFileSync(globalRankingPath, "utf8");
+    globalRanking = fileContent ? JSON.parse(fileContent) : {};
+  }
+  // sort candidates for the given position by overall_similarity descending
+  let candidatesForPosition = candidateData[position] || {};
+  let sortedCandidates = Object.keys(candidatesForPosition)
+    .map((candidateId) => {
+      return {
+        candidateId,
+        overall_similarity:
+          candidatesForPosition[candidateId].overall_similarity,
+      };
+    })
+    .sort((a, b) => b.overall_similarity - a.overall_similarity);
+
+  let ranking = {};
+  sortedCandidates.forEach((cand, index) => {
+    ranking[cand.candidateId] = index + 1;
+  });
+  globalRanking[position] = ranking;
+  fs.writeFileSync(
+    globalRankingPath,
+    JSON.stringify(globalRanking, null, 2),
+    "utf8"
+  );
+}
+
+// ---------------------------------------------
 // 1. Register Candidate
 // ---------------------------------------------
 router.post("/register_candidate", async (req, res) => {
@@ -161,14 +195,12 @@ router.post("/register_candidate", async (req, res) => {
 // ---------------------------------------------
 // 2. Add Candidate CV for an Additional Position
 // ---------------------------------------------
-router.post("/add_candidate_cv", async (req, res) => {
+router.post("/candidate_cv", async (req, res) => {
   const { number, password, cv, position } = req.body;
   if (!number || !password || !cv || !position) {
-    return res
-      .status(400)
-      .json({
-        error: "Fields number, password, cv, and position are required.",
-      });
+    return res.status(400).json({
+      error: "Fields number, password, cv, and position are required.",
+    });
   }
   if (typeof position !== "string") {
     return res.status(400).json({ error: "Position must be a string." });
@@ -286,12 +318,10 @@ router.post("/add_candidate_cv", async (req, res) => {
     });
   } catch (error) {
     console.error("Error adding candidate CV for new position:", error);
-    res
-      .status(500)
-      .json({
-        error:
-          "An error occurred while adding the candidate CV for the new position.",
-      });
+    res.status(500).json({
+      error:
+        "An error occurred while adding the candidate CV for the new position.",
+    });
   }
 });
 
@@ -315,12 +345,10 @@ router.post("/register_jd", async (req, res) => {
     !position ||
     !topCandidates
   ) {
-    return res
-      .status(400)
-      .json({
-        error:
-          "All fields (username, password, salary, job_description, position, topCandidates) are required.",
-      });
+    return res.status(400).json({
+      error:
+        "All fields (username, password, salary, job_description, position, topCandidates) are required.",
+    });
   }
   if (typeof position !== "string") {
     return res.status(400).json({ error: "Position must be a string." });
@@ -416,68 +444,15 @@ router.post("/register_jd", async (req, res) => {
       ...cand,
     }));
 
-    const topCandidateIds = new Set(
-      candidateRankings
-        .slice(0, topCandidatesNumber)
-        .map((cand) => cand.candidateId)
-    );
+    // Instead of immediately updating candidate records with offers and notifications,
+    // store the candidate rankings in the job description record along with empty arrays
+    // for selected/rejected and accepted/declined candidates.
     const companyDetails = {
       company: username,
       salary,
       job_description,
       position,
     };
-
-    for (const candId in candidatesForPosition) {
-      let notificationObj = {
-        message: "",
-        company_details: username,
-        job_description,
-        salary,
-      };
-      if (topCandidateIds.has(candId)) {
-        if (!candidateData[position][candId].offers_available) {
-          candidateData[position][candId].offers_available = [];
-        }
-        candidateData[position][candId].offers_available.push(companyDetails);
-        notificationObj.message = `Congrats! You have been selected for the position ${position}.`;
-        candidateData[position][candId].notifications.push(notificationObj);
-        candidateData[position][candId].new_notification = 1;
-      } else {
-        if (!candidateData[position][candId].rejected_from) {
-          candidateData[position][candId].rejected_from = [];
-        }
-        candidateData[position][candId].rejected_from.push(companyDetails);
-        notificationObj.message = `Sorry, you have not been selected for the position ${position}.`;
-        candidateData[position][candId].notifications.push(notificationObj);
-        candidateData[position][candId].new_notification = 1;
-      }
-    }
-    fs.writeFileSync(
-      candidateFilePath,
-      JSON.stringify(candidateData, null, 2),
-      "utf8"
-    );
-
-    const globalRankingPath = path.join(__dirname, "../global_ranking.json");
-    let globalRanking = {};
-    if (fs.existsSync(globalRankingPath)) {
-      const globalRankingContent = fs.readFileSync(globalRankingPath, "utf8");
-      globalRanking = globalRankingContent
-        ? JSON.parse(globalRankingContent)
-        : {};
-    }
-    if (!globalRanking[position]) {
-      globalRanking[position] = {};
-    }
-    for (const candObj of candidateRankings) {
-      globalRanking[position][candObj.candidateId] = candObj.ranking;
-    }
-    fs.writeFileSync(
-      globalRankingPath,
-      JSON.stringify(globalRanking, null, 2),
-      "utf8"
-    );
 
     const jdFilePath = path.join(__dirname, "../job_description.json");
     let jobDescData = {};
@@ -488,35 +463,36 @@ router.post("/register_jd", async (req, res) => {
     if (!jobDescData[position]) {
       jobDescData[position] = {};
     }
+    // Add notifications field for recruiter posting
     jobDescData[position][username] = {
       username,
       Password: password,
       Salary: salary,
       job_description,
       position,
-      candidates: candidateRankings.slice(0, topCandidatesNumber),
+      candidate_rankings: candidateRankings, // store full rankings
+      selected_candidates: [],
+      rejected_candidates: [],
+      candidates_accepted: [],
+      candidates_declined: [],
+      notifications: [],
+      new_notification: 0,
     };
+
     fs.writeFileSync(jdFilePath, JSON.stringify(jobDescData, null, 2), "utf8");
+
+    // Update global ranking file
+    updateGlobalRanking(position, candidateData);
 
     res.json({
       message: "Job description registered successfully",
-      job_posting: {
-        username,
-        Password: password,
-        Salary: salary,
-        job_description,
-        position,
-        candidates: candidateRankings.slice(0, topCandidatesNumber),
-        globalRanking: globalRanking[position],
-      },
+      job_posting: jobDescData[position][username],
     });
   } catch (error) {
     console.error("Error registering job description:", error);
-    res
-      .status(500)
-      .json({
-        error: "An error occurred while registering the job description.",
-      });
+    res.status(500).json({
+      error: "An error occurred while registering the job description.",
+    });
   }
 });
 
@@ -540,12 +516,10 @@ router.post("/add_job_description_cv", async (req, res) => {
     !position ||
     !topCandidates
   ) {
-    return res
-      .status(400)
-      .json({
-        error:
-          "All fields (username, password, salary, job_description, position, topCandidates) are required.",
-      });
+    return res.status(400).json({
+      error:
+        "All fields (username, password, salary, job_description, position, topCandidates) are required.",
+    });
   }
   if (typeof position !== "string") {
     return res.status(400).json({ error: "Position must be a string." });
@@ -665,102 +639,41 @@ router.post("/add_job_description_cv", async (req, res) => {
       ...cand,
     }));
 
-    const topCandidateIds = new Set(
-      candidateRankings
-        .slice(0, topCandidatesNumber)
-        .map((cand) => cand.candidateId)
-    );
-    const companyDetails = {
-      company: username,
-      salary,
-      job_description,
-      position,
-    };
-
-    for (const candId in candidatesForPosition) {
-      let notificationObj = {
-        message: "",
-        company_details: username,
-        job_description,
-        salary,
-      };
-      if (topCandidateIds.has(candId)) {
-        if (!candidateData[position][candId].offers_available) {
-          candidateData[position][candId].offers_available = [];
-        }
-        candidateData[position][candId].offers_available.push(companyDetails);
-        notificationObj.message = `Congrats! You have been selected for the position ${position}.`;
-        candidateData[position][candId].notifications.push(notificationObj);
-        candidateData[position][candId].new_notification = 1;
-      } else {
-        if (!candidateData[position][candId].rejected_from) {
-          candidateData[position][candId].rejected_from = [];
-        }
-        candidateData[position][candId].rejected_from.push(companyDetails);
-        notificationObj.message = `Sorry, you have not been selected for the position ${position}.`;
-        candidateData[position][candId].notifications.push(notificationObj);
-        candidateData[position][candId].new_notification = 1;
-      }
-    }
-    fs.writeFileSync(
-      candidateFilePath,
-      JSON.stringify(candidateData, null, 2),
-      "utf8"
-    );
-
-    const globalRankingPath = path.join(__dirname, "../global_ranking.json");
-    let globalRanking = {};
-    if (fs.existsSync(globalRankingPath)) {
-      const globalRankingContent = fs.readFileSync(globalRankingPath, "utf8");
-      globalRanking = globalRankingContent
-        ? JSON.parse(globalRankingContent)
-        : {};
-    }
-    if (!globalRanking[position]) {
-      globalRanking[position] = {};
-    }
-    for (const candObj of candidateRankings) {
-      globalRanking[position][candObj.candidateId] = candObj.ranking;
-    }
-    fs.writeFileSync(
-      globalRankingPath,
-      JSON.stringify(globalRanking, null, 2),
-      "utf8"
-    );
-
+    // Instead of updating candidate records directly,
+    // store the candidate rankings in the job description record along with empty arrays.
     if (!jobDescData[position]) {
       jobDescData[position] = {};
     }
+    // Add notifications field for recruiter posting
     jobDescData[position][username] = {
       username,
       Password: password,
       Salary: salary,
       job_description,
       position,
-      candidates: candidateRankings.slice(0, topCandidatesNumber),
+      candidate_rankings: candidateRankings, // store full rankings
+      selected_candidates: [],
+      rejected_candidates: [],
+      candidates_accepted: [],
+      candidates_declined: [],
+      notifications: [],
+      new_notification: 0,
     };
     fs.writeFileSync(jdFilePath, JSON.stringify(jobDescData, null, 2), "utf8");
 
+    // Update global ranking file
+    updateGlobalRanking(position, candidateData);
+
     res.json({
       message: "Job description added for new position successfully",
-      job_posting: {
-        username,
-        Password: password,
-        Salary: salary,
-        job_description,
-        position,
-        candidates: candidateRankings.slice(0, topCandidatesNumber),
-        globalRanking: globalRanking[position],
-      },
+      job_posting: jobDescData[position][username],
     });
   } catch (error) {
     console.error("Error adding job description for new position:", error);
-    res
-      .status(500)
-      .json({
-        error:
-          "An error occurred while adding the job description for the new position.",
-      });
+    res.status(500).json({
+      error:
+        "An error occurred while adding the job description for the new position.",
+    });
   }
 });
 
@@ -808,11 +721,9 @@ router.post("/uni_report", async (req, res) => {
     });
   } catch (error) {
     console.error("Error generating university report:", error);
-    res
-      .status(500)
-      .json({
-        error: "An error occurred while generating the university report.",
-      });
+    res.status(500).json({
+      error: "An error occurred while generating the university report.",
+    });
   }
 });
 
@@ -890,8 +801,8 @@ router.post("/login_jd", async (req, res) => {
     }
     let foundJobDescriptions = [];
     for (const pos in jobDescData) {
-      for (const recruiter in jobDescData[pos]) {
-        const jobPost = jobDescData[pos][recruiter];
+      for (const rec in jobDescData[pos]) {
+        const jobPost = jobDescData[pos][rec];
         if (jobPost.username === username && jobPost.Password === password) {
           foundJobDescriptions.push(jobPost);
         }
@@ -914,7 +825,7 @@ router.post("/login_jd", async (req, res) => {
 });
 
 // ---------------------------------------------
-// 8. Clear Notifications
+// 8. Clear Candidate Notifications
 // ---------------------------------------------
 router.post("/clear_notification", async (req, res) => {
   const { number, password, position } = req.body;
@@ -1019,7 +930,6 @@ router.post("/feedback", async (req, res) => {
       const feedbackPrompt =
         "Based on the provided user CV and the top 5 candidate CVs, please provide specific and actionable feedback on what areas the user should improve to better align with or exceed the top candidates. " +
         "Focus on key sections such as skills, education, responsibilities, and work experience. Provide clear suggestions for improvement.";
-
       // Call the LLM via queryCV. Using type "cv" for extraction.
       const feedbackResponse = await queryCV(
         feedbackPrompt,
@@ -1041,6 +951,273 @@ router.post("/feedback", async (req, res) => {
     res
       .status(500)
       .json({ error: "An error occurred while generating feedback." });
+  }
+});
+
+// ---------------------------------------------
+// 10. Recruiter Decision Endpoint
+// ---------------------------------------------
+// This endpoint allows the recruiter to either select or reject a candidate.
+// If selected, the candidate is added to the "selected_candidates" key in the job description record,
+// the company details are added to the candidate's "offers_available",
+// and a notification is sent to the candidate.
+// If rejected, the candidate is added to the "rejected_candidates" key in the job description record,
+// and the company details are added to the candidate's "rejected_from".
+router.post("/recruiter_decision", async (req, res) => {
+  const { username, password, position, candidateId, decision } = req.body;
+  if (!username || !password || !position || !candidateId || !decision) {
+    return res.status(400).json({
+      error:
+        "All fields (username, password, position, candidateId, decision) are required.",
+    });
+  }
+  if (decision !== "select" && decision !== "reject") {
+    return res
+      .status(400)
+      .json({ error: "Decision must be either 'select' or 'reject'." });
+  }
+  try {
+    // Load job description data
+    const jdFilePath = path.join(__dirname, "../job_description.json");
+    let jobDescData = {};
+    if (fs.existsSync(jdFilePath)) {
+      const fileContent = fs.readFileSync(jdFilePath, "utf8");
+      jobDescData = fileContent ? JSON.parse(fileContent) : {};
+    }
+    if (!jobDescData[position] || !jobDescData[position][username]) {
+      return res.status(404).json({
+        error: "Job posting not found for given position and recruiter.",
+      });
+    }
+    const jobPosting = jobDescData[position][username];
+    // Check recruiter credentials
+    if (jobPosting.Password !== password) {
+      return res.status(401).json({ error: "Invalid credentials." });
+    }
+    // Prepare company details from the job posting
+    const companyDetails = {
+      company: username,
+      salary: jobPosting.Salary,
+      job_description: jobPosting.job_description,
+      position: jobPosting.position,
+    };
+    // Load candidate data
+    const candidateFilePath = path.join(__dirname, "../candidate.json");
+    let candidateData = {};
+    if (fs.existsSync(candidateFilePath)) {
+      const fileContent = fs.readFileSync(candidateFilePath, "utf8");
+      candidateData = fileContent ? JSON.parse(fileContent) : {};
+    }
+    // Process the decision
+    if (decision === "select") {
+      if (!jobPosting.selected_candidates) jobPosting.selected_candidates = [];
+      if (!jobPosting.selected_candidates.includes(candidateId)) {
+        jobPosting.selected_candidates.push(candidateId);
+      }
+      // Update candidate record: add company details to offers_available and send notification
+      if (candidateData[position] && candidateData[position][candidateId]) {
+        if (!candidateData[position][candidateId].offers_available) {
+          candidateData[position][candidateId].offers_available = [];
+        }
+        if (
+          !candidateData[position][candidateId].offers_available.find(
+            (o) => o.company === username
+          )
+        ) {
+          candidateData[position][candidateId].offers_available.push(
+            companyDetails
+          );
+        }
+        // Add notification for candidate
+        if (!candidateData[position][candidateId].notifications) {
+          candidateData[position][candidateId].notifications = [];
+        }
+        candidateData[position][candidateId].notifications.push(
+          `You have been selected by ${username}.`
+        );
+        candidateData[position][candidateId].new_notification =
+          (candidateData[position][candidateId].new_notification || 0) + 1;
+      }
+    } else if (decision === "reject") {
+      if (!jobPosting.rejected_candidates) jobPosting.rejected_candidates = [];
+      if (!jobPosting.rejected_candidates.includes(candidateId)) {
+        jobPosting.rejected_candidates.push(candidateId);
+      }
+      // Update candidate record: add company details to rejected_from
+      if (candidateData[position] && candidateData[position][candidateId]) {
+        if (!candidateData[position][candidateId].rejected_from) {
+          candidateData[position][candidateId].rejected_from = [];
+        }
+        if (
+          !candidateData[position][candidateId].rejected_from.find(
+            (o) => o.company === username
+          )
+        ) {
+          candidateData[position][candidateId].rejected_from.push(
+            companyDetails
+          );
+        }
+      }
+    }
+    // Save updated job description and candidate data
+    fs.writeFileSync(jdFilePath, JSON.stringify(jobDescData, null, 2), "utf8");
+    fs.writeFileSync(
+      candidateFilePath,
+      JSON.stringify(candidateData, null, 2),
+      "utf8"
+    );
+    res.json({ message: "Recruiter decision processed successfully." });
+  } catch (error) {
+    console.error("Error processing recruiter decision:", error);
+    res.status(500).json({
+      error: "An error occurred while processing the recruiter decision.",
+    });
+  }
+});
+
+// ---------------------------------------------
+// 11. Candidate Offer Response Endpoint
+// ---------------------------------------------
+// This endpoint allows a candidate to respond to a company offer.
+// If accepted, the offer is added to the candidate's "accepted_offer" and the candidate is added to
+// the job posting's "candidates_accepted". A notification is sent to the recruiter.
+// If rejected, the offer is added to the candidate's "declined_offer" and the candidate is added to
+// the job posting's "candidates_declined". A notification is also sent to the recruiter.
+router.post("/candidate_offer_response", async (req, res) => {
+  const { number, password, position, company, decision } = req.body;
+  if (!number || !password || !position || !company || !decision) {
+    return res.status(400).json({
+      error:
+        "All fields (number, password, position, company, decision) are required.",
+    });
+  }
+  if (decision !== "accept" && decision !== "reject") {
+    return res
+      .status(400)
+      .json({ error: "Decision must be either 'accept' or 'reject'." });
+  }
+  try {
+    // Load candidate data
+    const candidateFilePath = path.join(__dirname, "../candidate.json");
+    let candidateData = {};
+    if (fs.existsSync(candidateFilePath)) {
+      const fileContent = fs.readFileSync(candidateFilePath, "utf8");
+      candidateData = fileContent ? JSON.parse(fileContent) : {};
+    }
+    if (!candidateData[position] || !candidateData[position][number]) {
+      return res
+        .status(404)
+        .json({ error: "Candidate not found for the given position." });
+    }
+    const candidate = candidateData[position][number];
+    if (candidate.Password !== password) {
+      return res.status(401).json({ error: "Invalid credentials." });
+    }
+    // Check if candidate has an offer from the company
+    if (
+      !candidate.offers_available ||
+      !candidate.offers_available.find((o) => o.company === company)
+    ) {
+      return res
+        .status(400)
+        .json({ error: "No offer available from the specified company." });
+    }
+    // Load job description data
+    const jdFilePath = path.join(__dirname, "../job_description.json");
+    let jobDescData = {};
+    if (fs.existsSync(jdFilePath)) {
+      const fileContent = fs.readFileSync(jdFilePath, "utf8");
+      jobDescData = fileContent ? JSON.parse(fileContent) : {};
+    }
+    if (!jobDescData[position] || !jobDescData[position][company]) {
+      return res.status(404).json({
+        error: "Job posting not found for the given position and company.",
+      });
+    }
+    const jobPosting = jobDescData[position][company];
+    // Process candidate's decision
+    if (decision === "accept") {
+      if (!candidate.accepted_offer) candidate.accepted_offer = [];
+      if (!candidate.accepted_offer.find((o) => o.company === company)) {
+        candidate.accepted_offer.push(
+          candidate.offers_available.find((o) => o.company === company)
+        );
+      }
+      if (!jobPosting.candidates_accepted) jobPosting.candidates_accepted = [];
+      if (!jobPosting.candidates_accepted.includes(number)) {
+        jobPosting.candidates_accepted.push(number);
+      }
+      // Send notification to recruiter
+      if (!jobPosting.notifications) jobPosting.notifications = [];
+      jobPosting.notifications.push(
+        `Candidate ${number} has accepted your offer.`
+      );
+      jobPosting.new_notification = (jobPosting.new_notification || 0) + 1;
+    } else if (decision === "reject") {
+      if (!candidate.declined_offer) candidate.declined_offer = [];
+      if (!candidate.declined_offer.find((o) => o.company === company)) {
+        candidate.declined_offer.push(
+          candidate.offers_available.find((o) => o.company === company)
+        );
+      }
+      if (!jobPosting.candidates_declined) jobPosting.candidates_declined = [];
+      if (!jobPosting.candidates_declined.includes(number)) {
+        jobPosting.candidates_declined.push(number);
+      }
+      // Send notification to recruiter
+      if (!jobPosting.notifications) jobPosting.notifications = [];
+      jobPosting.notifications.push(
+        `Candidate ${number} has rejected your offer.`
+      );
+      jobPosting.new_notification = (jobPosting.new_notification || 0) + 1;
+    }
+    // Save updated candidate and job description data
+    fs.writeFileSync(
+      candidateFilePath,
+      JSON.stringify(candidateData, null, 2),
+      "utf8"
+    );
+    fs.writeFileSync(jdFilePath, JSON.stringify(jobDescData, null, 2), "utf8");
+    res.json({ message: "Candidate offer response processed successfully." });
+  } catch (error) {
+    console.error("Error processing candidate offer response:", error);
+    res.status(500).json({
+      error: "An error occurred while processing the candidate offer response.",
+    });
+  }
+});
+
+// ---------------------------------------------
+// 12. Clear Recruiter Notifications Endpoint
+// ---------------------------------------------
+router.post("/clear_notification_recruiter", async (req, res) => {
+  const { username, password, position } = req.body;
+  if (!username || !password || !position) {
+    return res
+      .status(400)
+      .json({ error: "Fields username, password, and position are required." });
+  }
+  try {
+    const jdFilePath = path.join(__dirname, "../job_description.json");
+    let jobDescData = {};
+    if (fs.existsSync(jdFilePath)) {
+      const fileContent = fs.readFileSync(jdFilePath, "utf8");
+      jobDescData = fileContent ? JSON.parse(fileContent) : {};
+    }
+    if (!jobDescData[position] || !jobDescData[position][username]) {
+      return res.status(404).json({
+        error: "Job posting not found for given position and recruiter.",
+      });
+    }
+    let jobPosting = jobDescData[position][username];
+    jobPosting.new_notification = 0;
+    fs.writeFileSync(jdFilePath, JSON.stringify(jobDescData, null, 2), "utf8");
+    res.json({ message: "Recruiter notifications cleared successfully." });
+  } catch (error) {
+    console.error("Error clearing recruiter notifications:", error);
+    res.status(500).json({
+      error: "An error occurred while clearing recruiter notifications.",
+    });
   }
 });
 
