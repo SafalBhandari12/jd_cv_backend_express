@@ -3,6 +3,12 @@ const fs = require("fs");
 const path = require("path");
 const router = express.Router();
 
+const twilio = require("twilio");
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
+const client = twilio(accountSid, authToken);
+
 const {
   delay,
   calculateAtsScore,
@@ -128,6 +134,7 @@ router.post("/register_candidate", async (req, res) => {
 
     let candidateDetails = {
       Name: name,
+      Number: number,
       Password: password,
       Salary: salary,
       University: university,
@@ -758,18 +765,27 @@ router.post("/login_candidate", async (req, res) => {
       ) {
         const overall_rank =
           (globalRanking[pos] && globalRanking[pos][number]) || "Not Ranked";
+        // Update the candidate record with global ranking
+        candidateData[pos][number].overall_rank = overall_rank;
         foundCandidates.push({
           position: pos,
           candidateId: number,
-          overall_rank,
           ...candidateData[pos][number],
         });
       }
     }
+    fs.writeFileSync(
+      candidateFilePath,
+      JSON.stringify(candidateData, null, 2),
+      "utf8"
+    );
     if (foundCandidates.length > 0) {
       res.json({
         message: "Candidate logged in successfully",
-        candidates: foundCandidates.map((cand) => stripEmbeddings(cand)),
+        candidates: foundCandidates.map((cand) => ({
+          ...stripEmbeddings(cand),
+          overall_rank: cand.overall_rank,
+        })),
       });
     } else {
       res.status(401).json({ error: "Invalid credentials" });
@@ -929,7 +945,8 @@ router.post("/feedback", async (req, res) => {
       // Create a prompt asking for detailed feedback
       const feedbackPrompt =
         "Based on the provided user CV and the top 5 candidate CVs, please provide specific and actionable feedback on what areas the user should improve to better align with or exceed the top candidates. " +
-        "Focus on key sections such as skills, education, responsibilities, and work experience. Provide clear suggestions for improvement.";
+        "Focus on key sections such as skills, education, responsibilities, and work experience. Provide clear suggestions for improvement." +
+        "Just give the feedback in the single paragraph. Make it sound like real feedback that would be given to a person.(Use you) to mention the person. Don't mention other candidate names based on the position that the person is applying for";
       // Call the LLM via queryCV. Using type "cv" for extraction.
       const feedbackResponse = await queryCV(
         feedbackPrompt,
@@ -1033,10 +1050,24 @@ router.post("/recruiter_decision", async (req, res) => {
           candidateData[position][candidateId].notifications = [];
         }
         candidateData[position][candidateId].notifications.push(
-          `You have been selected by ${username}.`
+          `You have been selected by ${username} for the position of ${position}. You will be contacted soon by the company representatives.`
         );
         candidateData[position][candidateId].new_notification =
           (candidateData[position][candidateId].new_notification || 0) + 1;
+
+        // Send SMS via Twilio for selection
+        const candidatePhone = candidateData[position][candidateId].Number;
+        console.log(candidatePhone);
+        // client.messages
+        //   .create({
+        //     body: `You have been selected by ${username}.`,
+        //     from: twilioPhoneNumber,
+        //     to: candidatePhone,
+        //   })
+        //   .then((message) => console.log("Twilio message SID:", message.sid))
+        //   .catch((error) =>
+        //     console.error("Twilio error sending selection SMS:", error)
+        //   );
       }
     } else if (decision === "reject") {
       if (!jobPosting.rejected_candidates) jobPosting.rejected_candidates = [];
@@ -1057,6 +1088,19 @@ router.post("/recruiter_decision", async (req, res) => {
             companyDetails
           );
         }
+
+        // Send SMS via Twilio for rejection
+        const candidatePhone = candidateData[position][candidateId].phone;
+        // client.messages
+        //   .create({
+        //     body: `You have been rejected by ${username}.`,
+        //     from: twilioPhoneNumber,
+        //     to: candidatePhone,
+        //   })
+        //   .then((message) => console.log("Twilio message SID:", message.sid))
+        //   .catch((error) =>
+        //     console.error("Twilio error sending rejection SMS:", error)
+        //   );
       }
     }
     // Save updated job description and candidate data
