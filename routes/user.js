@@ -1058,16 +1058,16 @@ router.post("/recruiter_decision", async (req, res) => {
         // Send SMS via Twilio for selection
         const candidatePhone = candidateData[position][candidateId].Number;
         console.log(candidatePhone);
-        // client.messages
-        //   .create({
-        //     body: `You have been selected by ${username}.`,
-        //     from: twilioPhoneNumber,
-        //     to: candidatePhone,
-        //   })
-        //   .then((message) => console.log("Twilio message SID:", message.sid))
-        //   .catch((error) =>
-        //     console.error("Twilio error sending selection SMS:", error)
-        //   );
+        client.messages
+          .create({
+            body: `You have been selected by ${username}.`,
+            from: twilioPhoneNumber,
+            to: candidatePhone,
+          })
+          .then((message) => console.log("Twilio message SID:", message.sid))
+          .catch((error) =>
+            console.error("Twilio error sending selection SMS:", error)
+          );
       }
     } else if (decision === "reject") {
       if (!jobPosting.rejected_candidates) jobPosting.rejected_candidates = [];
