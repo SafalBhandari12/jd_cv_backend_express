@@ -8,7 +8,7 @@ const cors = require("cors"); // Import CORS package
 const userRouter = require("./routes/user");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // Middleware to allow all CORS requests
 app.use(cors());

@@ -22,15 +22,48 @@ const {
 // ---------------------------------------------
 // Define CV and JD questions
 // ---------------------------------------------
+// You can store this in a separate file (e.g., cvQuestions.js) or inline.
+// These prompts will guide the LLM to provide data in a structured, Markdown-friendly format.
+
 const cvQuestions = {
-  skills:
-    "Based solely on the provided CV, extract and list the candidate's skills exactly as mentioned. Do not infer or add any additional skills.",
-  education:
-    "Based solely on the provided CV, extract and list the candidate's education details exactly as stated. Do not hypothesize or add extra details.",
-  responsibilities:
-    "Based solely on the provided CV, extract and list the responsibilities the candidate has handled in the past. Do not add any responsibilities that are not explicitly mentioned.",
-  experience:
-    "Based solely on the provided CV, extract and list the candidate's work experience exactly as presented. Do not infer or add any extra information.",
+  skills: `
+  Please extract and list the candidate's **exact** skills from the provided CV. 
+  - Return them as a comma-separated list **or** a JSON array, so each skill can be displayed individually in the UI.
+  - **Do not infer** or add any additional skills that are not explicitly stated.
+  - Ensure the response is only the list (no extra text).
+  `,
+  education: `
+    Based **solely** on the provided CV, extract and list the candidate's **education details** in the exact wording provided.
+    - Do not hypothesize or add extra details.
+    - Provide the answer in **well-structured Markdown**.
+    - Use **headings** for each degree or institution if possible.
+    - Use bullet points to list relevant courses or highlights.
+    - Ensure any dates, GPAs, or special recognitions are clearly separated.
+  `,
+  responsibilities: `
+    Based **solely** on the provided CV, extract and list the **responsibilities** the candidate has handled in the past.
+    - Format the output as a clean Markdown bullet list, with each responsibility on its own line, prefixed by a dash (-).
+    - Preserve the original phrasing exactly.
+    - **Do not add** any responsibilities not explicitly mentioned.
+  `,
+  experience: `
+  Based solely on the provided CV, extract and list the candidate's **work experience** in a clear, professional, and concise format.
+
+  **Requirements:**
+  - Do not include any heading like "Work Experience".
+  - **Only include formal work experience entries**; ignore sections unrelated to work (e.g., education or non-professional roles).
+  - For each job entry, provide:
+    - **Job Title** (formatted in bold)
+    - **Company Name** and location (formatted in italics if available)
+    - **Dates of Employment** (clearly indicated)
+    - **Key responsibilities and achievements** as a bullet list.
+  - Exclude any unrelated or redundant headings (e.g., "DATA SCIENCE", "SALES") that do not pertain directly to the role.
+  - Format the final output in **Markdown**:
+    - Use bold headings for job titles.
+    - Use bullet points (-) for listing responsibilities and achievements.
+    - Clearly separate dates, job titles, company names, and other relevant details.
+  - **Do not add or infer** any information beyond what is explicitly provided in the CV.
+  `,
 };
 
 const jdQuestions = {
@@ -108,7 +141,9 @@ router.post("/register_candidate", async (req, res) => {
       cv,
       "cv"
     );
+    console.log(cvQuestions.experience);
     const experienceText = await queryCV(cvQuestions.experience, cv, "cv");
+    console.log(experienceText);
 
     const skillsEmbedding = await getEmbedding(skillsText);
     const educationEmbedding = await getEmbedding(educationText);

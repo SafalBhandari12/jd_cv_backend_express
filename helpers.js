@@ -196,6 +196,7 @@ function stripEmbeddings(candidateObj) {
     Name: candidateObj.Name,
     Password: candidateObj.Password,
     Salary: candidateObj.Salary,
+    Number:candidateObj.Number,
     University: candidateObj.University,
     cv: candidateObj.cv,
     position: candidateObj.position,
