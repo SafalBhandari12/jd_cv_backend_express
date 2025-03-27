@@ -977,11 +977,13 @@ router.post("/feedback", async (req, res) => {
         }):\n${cand.cv}\n\n`;
       });
 
-      // Create a prompt asking for detailed feedback
+      // In your backend (e.g., feedback.js)
       const feedbackPrompt =
         "Based on the provided user CV and the top 5 candidate CVs, please provide specific and actionable feedback on what areas the user should improve to better align with or exceed the top candidates. " +
-        "Focus on key sections such as skills, education, responsibilities, and work experience. Provide clear suggestions for improvement." +
-        "Just give the feedback in the single paragraph. Make it sound like real feedback that would be given to a person.(Use you) to mention the person. Don't mention other candidate names based on the position that the person is applying for";
+        "Focus on key sections such as skills, education, responsibilities, and work experience. Provide clear suggestions for improvement. " +
+        "Additionally, structure the feedback into separate sections using markdown formatting, with each section labeled appropriately (e.g., **Skills**, **Education**, **Responsibilities**, **Work Experience**). " +
+        "Just give the feedback in a single paragraph for each section. Make it sound like real feedback that would be given to a person (use 'you' to mention the person). " +
+        "Don't mention other candidate names based on the position that the person is applying for.";
       // Call the LLM via queryCV. Using type "cv" for extraction.
       const feedbackResponse = await queryCV(
         feedbackPrompt,
